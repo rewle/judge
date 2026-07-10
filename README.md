@@ -12,7 +12,7 @@ CI/CD-гейты для реестра скиллов (Claude Code skills) и к
 | 02 | [permissions](docs/02_permissions.md) | детерминированный | tools/MCP против allowlist | реализован |
 | 03 | [duplication](docs/03_duplication.md) | детерминированный (v0: эвристика) | пересечение с существующими скиллами | v0-заглушка |
 | 04 | [rubric](docs/04_rubric.md) | недетерминированный (LLM-judge) | 6 критериев качества + groundedness | реализован, требует ключ |
-| 05 | [token_efficiency](docs/05_token_efficiency.md) | недетерминированный (behavioral) | токены/латентность vs прирост coverage | не реализован |
+| 05 | [token_efficiency](docs/05_token_efficiency.md) | недетерминированный (behavioral) | токены/латентность vs прирост coverage | реализован, требует ключ |
 | 06 | [redteam](docs/06_redteam.md) | недетерминированный (adversarial) | устойчивость к prompt injection / расширению прав | не реализован |
 
 Гейты 01-02 дешёвые и детерминированные — гонять на каждый push.
@@ -36,7 +36,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Настройка судьи (гейт 04, в дальнейшем 05-06)
+## Настройка судьи (гейты 04-05, в дальнейшем 06)
 
 Нужен ключ Anthropic API — креды в репозитории не хранятся, только env:
 
@@ -46,8 +46,10 @@ export JUDGE_BASE_URL=...              # опционально: свой про
 export JUDGE_MODEL=claude-sonnet-5     # опционально, дефолт см. config.yaml -> judge.model
 ```
 
-Без ключа гейт 04 возвращает `not_configured` (не блокирует цепочку, но и не
-пропускает молча — статус явно виден в отчёте).
+Без ключа гейты 04-05 возвращают `not_configured` (не блокируют цепочку, но и
+не пропускают молча — статус явно виден в отчёте). Гейт 05 дополнительно
+требует `eval.yaml` рядом со SKILL.md (задача + ожидаемое поведение) — без
+него возвращает `skipped`, не `not_configured`.
 
 ## Запуск
 

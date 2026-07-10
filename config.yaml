@@ -36,4 +36,5 @@ thresholds:
   duplication_similarity: 0.85     # выше — считается дублем
   rubric_min_score: 0.7            # средний балл по рубрике ниже — fail
   rubric_max_sigma: 0.02           # нестабильность судьи выше — fail (см. skill_eval методологию)
-  token_efficiency_max_overhead_pct: 30  # доп. токены сверх этого без роста coverage — fail
+  token_efficiency_max_overhead_pct: 30       # overhead ниже — PASS без проверки coverage
+  token_efficiency_min_coverage_gain_pp: 10   # overhead выше порога — нужен прирост coverage не меньше этого, иначе fail
