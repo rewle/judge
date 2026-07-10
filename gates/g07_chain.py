@@ -24,17 +24,64 @@ run_skill() в run_gates.py (см. --check-chains).
    backtick-спана вне fenced-блоков) — минимизирует ложные срабатывания
    ценой пропуска вызовов, упомянутых без backtick-оформления.
 
-Отложено за пределы этой версии (см. docs/roadmap_chains.md): совместимость
-input/output между скиллами, совокупный токен-бюджет цепочки.
+Пятая проверка — опциональная, judge-based (см. docs/roadmap_chains.md,
+"I/O-совместимость"):
+5. I/O-совместимость: для каждого ребра uses: A→B, где у B задекларирован
+   provides: (свободный текст — что скилл возвращает вызывающему),
+   forced tool-use judge оценивает, покрывает ли это то, что A, судя по
+   своему тексту, ожидает получить. Модель — не строгий тип, а
+   естественноязыковой контракт (агент читает SKILL.md, не вызывает
+   функцию), поэтому проверка не парсинг, а judge (переиспользует
+   judge_client, тот же паттерн, что гейт 03 v1). Без judge — весь этот
+   слой пропускается gate-wide, детерминированные проверки 1-4 не
+   страдают. Рёбра, где у B нет provides:, пропускаются поштучно.
+
+Совокупный токен-бюджет цепочки и многошаговый prompt injection —
+по-прежнему отложены (см. docs/roadmap_chains.md).
 """
+import os
 import re
 from pathlib import Path
+
+import yaml
 
 from gates.base import GateResult, PASS, FAIL
 from gates.g01_static import _read_skill
 from gates.g02_permissions import _load_policy, evaluate_tools
+from judge_client import get_client, JudgeNotConfigured
 
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
+CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+
+_IO_COMPAT_TOOL = {
+    "name": "submit_io_compat_verdict",
+    "description": (
+        "Оценить, покрывает ли заявленный provides: скилла B то, что скилл A, "
+        "судя по его собственному тексту, ожидает получить, вызывая B через uses:."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "compatible": {"type": "boolean"},
+            "score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "0 — совсем не то, что нужно A; 1 — полностью покрывает ожидание",
+            },
+            "reason": {"type": "string"},
+        },
+        "required": ["compatible", "score", "reason"],
+    },
+}
+
+IO_JUDGE_SYS = (
+    "Ты проверяешь совместимость на стыке двух скиллов в реестре. Скилл A вызывает "
+    "скилл B (uses:) как часть своей работы. Оцени: то, что B заявляет как результат "
+    "(provides:), покрывает ли то, что A, судя по его собственному тексту, ожидает "
+    "получить, вызывая B. Это не типизированный контракт — не придирайся к формату "
+    "или структуре, если смысл по существу сходится."
+)
 
 
 def _get_list_field(frontmatter: dict, key: str) -> list:
@@ -45,10 +92,10 @@ def _get_list_field(frontmatter: dict, key: str) -> list:
 
 
 def _load_registry(registry_dir: Path) -> dict:
-    """name -> {"dir": Path, "frontmatter": dict, "body": str}. Скиллы без
-    валидного frontmatter молча пропускаются — их должен был отсеять
-    гейт 01 раньше (см. докстринг модуля: гейт 07 рассчитан на прогон
-    после 01-06)."""
+    """name -> {"dir": Path, "frontmatter": dict, "body": str, "text": str}.
+    Скиллы без валидного frontmatter молча пропускаются — их должен был
+    отсеять гейт 01 раньше (см. докстринг модуля: гейт 07 рассчитан на
+    прогон после 01-06)."""
     registry = {}
     for skill_dir in sorted(registry_dir.iterdir()):
         if not skill_dir.is_dir():
@@ -59,8 +106,31 @@ def _load_registry(registry_dir: Path) -> dict:
         name = frontmatter.get("name")
         if not name:
             continue
-        registry[name] = {"dir": skill_dir, "frontmatter": frontmatter, "body": body or ""}
+        registry[name] = {"dir": skill_dir, "frontmatter": frontmatter, "body": body or "", "text": text or ""}
     return registry
+
+
+def _judge_io_compat(client, model: str, consumer_text: str, provider_name: str, provider_fm: dict) -> dict:
+    provider_desc = provider_fm.get("description", "") or ""
+    provider_provides = provider_fm.get("provides", "") or ""
+    user = (
+        f"СКИЛЛ A (вызывающий, полный текст):\n<<<\n{consumer_text}\n>>>\n\n"
+        f"СКИЛЛ B (вызывается через uses: '{provider_name}'):\n"
+        f"description: {provider_desc}\n"
+        f"provides: {provider_provides}"
+    )
+    resp = client.messages.create(
+        model=model,
+        max_tokens=512,
+        system=IO_JUDGE_SYS,
+        messages=[{"role": "user", "content": user}],
+        tools=[_IO_COMPAT_TOOL],
+        tool_choice={"type": "tool", "name": "submit_io_compat_verdict"},
+    )
+    for block in resp.content:
+        if block.type == "tool_use":
+            return block.input
+    raise RuntimeError("judge не вернул tool_use блок с вердиктом о совместимости")
 
 
 def _mentioned_skill_names(body: str, registry_names: set, self_name: str) -> set:
@@ -141,6 +211,18 @@ def check_registry(registry_dir: Path) -> dict:
 
     policy = _load_policy()
 
+    io_client = None
+    io_model = None
+    io_threshold = None
+    try:
+        io_client = get_client()
+    except JudgeNotConfigured:
+        io_client = None
+    if io_client is not None:
+        io_config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+        io_model = os.environ.get("JUDGE_MODEL", io_config.get("judge", {}).get("model", "claude-sonnet-5"))
+        io_threshold = io_config["thresholds"].get("chain_io_compat_min_score", 0.6)
+
     results = {}
     for name, info in registry.items():
         errors = []
@@ -175,6 +257,18 @@ def check_registry(registry_dir: Path) -> dict:
                 f"тело упоминает `{', '.join(sorted(undeclared))}` (backtick-спан), "
                 f"но это не задекларировано в uses: — необъявленная зависимость"
             )
+
+        if io_client is not None:
+            for used_name in filtered_graph.get(name, []):
+                provider_fm = registry[used_name]["frontmatter"]
+                if not (provider_fm.get("provides") or "").strip():
+                    continue
+                verdict = _judge_io_compat(io_client, io_model, info["text"], used_name, provider_fm)
+                if not verdict["compatible"] or verdict["score"] < io_threshold:
+                    errors.append(
+                        f"I/O-несовместимость с uses: '{used_name}' (score={verdict['score']:.2f}, "
+                        f"порог {io_threshold}): {verdict['reason']}"
+                    )
 
         if errors:
             results[name] = GateResult(FAIL, "; ".join(errors), {"errors": errors})
