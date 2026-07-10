@@ -9,12 +9,23 @@ from pathlib import Path
 
 import yaml
 
+from cache_store import content_hash, load_cache, save_cache
 from gates.base import GateResult, PASS, FAIL
 from gates.g01_static import _read_skill
 from judge_client import JudgeNotConfigured, get_client
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+CACHE_PATH = Path(__file__).parent.parent / "history" / "duplication_cache.json"
 STOPWORDS = {"и", "в", "на", "с", "по", "для", "не", "из", "или", "как", "the", "a", "to", "of", "and"}
+
+
+def _cache_key(model: str, hash_a: str, hash_b: str) -> str:
+    # Симметрично относительно пары (verdict не зависит от того, кто A, кто
+    # B — judge получает оба текста), model в ключе — разные модели могут
+    # дать разный вердикт, сравнивать между ними некорректно (тот же
+    # принцип, что backend в ключе истории гейта 04).
+    a, b = sorted([hash_a, hash_b])
+    return f"{model}:{a}:{b}"
 
 _DUP_TOOL = {
     "name": "submit_duplication_verdict",
@@ -135,16 +146,33 @@ def check(skill_path: Path, registry_dir: Path = None) -> GateResult:
     judge_cfg = config.get("judge", {})
     model = os.environ.get("JUDGE_MODEL", judge_cfg.get("model", "claude-sonnet-5"))
 
+    cache = load_cache(CACHE_PATH)
+    own_hash = content_hash(text)
+    cache_dirty = False
+
     semantic_matches = []
     verdicts = {}
+    cache_hits = 0
     for name, other_text, lexical_sim in semantic_candidates:
-        verdict = _judge_pair(client, model, text, other_text)
+        key = _cache_key(model, own_hash, content_hash(other_text))
+        cached = cache.get(key)
+        if cached is not None:
+            verdict = dict(cached)
+            cache_hits += 1
+        else:
+            verdict = _judge_pair(client, model, text, other_text)
+            cache[key] = verdict
+            cache_dirty = True
         verdict["lexical_sim"] = lexical_sim
         verdicts[name] = verdict
         if verdict["functionally_duplicate"] and verdict["similarity"] >= semantic_threshold:
             semantic_matches.append((name, verdict))
 
+    if cache_dirty:
+        save_cache(CACHE_PATH, cache)
+
     details["semantic_verdicts"] = verdicts
+    details["cache_hits"] = cache_hits
 
     if semantic_matches:
         details_str = ", ".join(f"{name} (similarity={v['similarity']})" for name, v in semantic_matches)
@@ -157,6 +185,6 @@ def check(skill_path: Path, registry_dir: Path = None) -> GateResult:
     return GateResult(
         PASS,
         f"дублей не найдено (v0 + семантическая проверка v1, {model}, "
-        f"{len(semantic_candidates)} кандидатов проверено)",
+        f"{len(semantic_candidates)} кандидатов проверено, {cache_hits} из кэша)",
         details,
     )
