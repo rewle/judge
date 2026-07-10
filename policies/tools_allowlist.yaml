@@ -1,0 +1,22 @@
+# Разрешённые инструменты по умолчанию (deny-by-default).
+# Инструмент вне этого списка допустим ТОЛЬКО если в frontmatter скилла есть
+# поле `justification:` с непустым обоснованием — см. docs/02_permissions.md.
+allowed_by_default:
+  - Read
+  - Grep
+  - Glob
+
+requires_justification:
+  - Bash
+  - Edit
+  - Write
+  - WebFetch
+  - WebSearch
+  - Agent
+
+# Инструменты/паттерны, которые не пропускаются даже с обоснованием —
+# требуют ручного ревью security-гейта (06_redteam), а не автоматического PASS.
+always_flag_for_review:
+  - "Bash(*)"          # неограниченный shell
+  - "mcp__*__delete*"  # любые деструктивные MCP-вызовы
+  - "mcp__*__send*"    # отправка сообщений/писем от чужого имени

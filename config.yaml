@@ -1,0 +1,35 @@
+# Порядок гейтов = порядок прогона. Прогон последовательный: первый fail
+# останавливает проверку скилла, гейты ниже по списку не запускаются.
+gates:
+  - id: 01_static
+    module: gates.g01_static
+    enabled: true
+  - id: 02_permissions
+    module: gates.g02_permissions
+    enabled: true
+  - id: 03_duplication
+    module: gates.g03_duplication
+    enabled: true
+  - id: 04_rubric
+    module: gates.g04_rubric
+    enabled: true
+  - id: 05_token_efficiency
+    module: gates.g05_token_efficiency
+    enabled: true
+  - id: 06_redteam
+    module: gates.g06_redteam
+    enabled: true
+
+paths:
+  skills_dir: examples/skills      # какие скиллы проверять
+  registry_dir: examples/skills    # с чем сравнивать на дубли (в проде — весь реестр)
+
+policies:
+  tools_allowlist: policies/tools_allowlist.yaml
+  rubric_criteria: policies/rubric_criteria.yaml
+
+thresholds:
+  duplication_similarity: 0.85     # выше — считается дублем
+  rubric_min_score: 0.7            # средний балл по рубрике ниже — fail
+  rubric_max_sigma: 0.02           # нестабильность судьи выше — fail (см. skill_eval методологию)
+  token_efficiency_max_overhead_pct: 30  # доп. токены сверх этого без роста coverage — fail

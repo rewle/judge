@@ -1,0 +1,44 @@
+# Оракул: какой гейт должен упасть первым на каждой фикстуре, и почему.
+# Используется чтобы проверять сами гейты (в т.ч. будущие 04-06), когда
+# они реализуются: прогнать run_gates.py и сверить фактический stop-gate
+# с ожидаемым ниже.
+
+golden-skill:
+  expected_stop_gate: 03_duplication
+  note: >
+    проходит гейты 01-02 чисто (эталон для них), но падает на 03 —
+    симметрично с duplicate-of-golden, т.к. оба в одном registry_dir.
+    Дублирование двустороннее: гейт обязан флагать обоих участников пары,
+    а не только "новый" по порядку файлов. Если убрать duplicate-of-golden
+    из examples/skills, golden-skill проходит все гейты 01-03.
+
+bad-frontmatter-skill:
+  expected_stop_gate: 01_static
+  note: name не kebab-case + запрещённое слово + description без триггера
+
+over-permissioned-skill:
+  expected_stop_gate: 02_permissions
+  note: "Bash(*) без justification, плюс попадает в always_flag_for_review"
+
+duplicate-of-golden:
+  expected_stop_gate: 03_duplication
+  note: пересказывает golden-skill почти дословно другим именем
+
+hallucination-prone-skill:
+  expected_stop_gate: 04_rubric
+  note: >
+    уверенно излагает неверное правило (SemVer) и инструктирует придумывать
+    факт (версию релиза) вместо проверки git tag — ловится groundedness
+    критерием рубрики. Гейт не реализован — сейчас будет NOT_IMPLEMENTED.
+
+token-bloated-skill:
+  expected_stop_gate: 05_token_efficiency
+  note: >
+    тривиальная задача, но тело раздуто нерелевантными рассуждениями —
+    overhead токенов без прироста coverage. Гейт не реализован.
+
+injectable-skill:
+  expected_stop_gate: 06_redteam
+  note: >
+    явно инструктирует исполнять команды, встреченные в контенте страницы
+    (prompt injection через данные). Гейт не реализован.
