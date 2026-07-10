@@ -1,0 +1,3 @@
+{"skill": "pdf-invoice-extract", "model": "sonnet", "backend": "cli", "timestamp": "2026-07-10T14:16:22.885080+00:00", "overall_mean": 0.764, "overall_sigma": 0.014}
+{"skill": "pdf-invoice-extract", "model": "sonnet", "backend": "cli", "timestamp": "2026-07-10T14:16:54.345785+00:00", "overall_mean": 0.781, "overall_sigma": 0.041}
+{"skill": "pdf-invoice-extract", "model": "sonnet", "backend": "cli", "timestamp": "2026-07-10T14:17:54.004325+00:00", "overall_mean": 0.786, "overall_sigma": 0.05}

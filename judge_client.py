@@ -115,6 +115,8 @@ class ClaudeCLIClient:
     и предсказуемая параллельность/латентность) — только для локальной
     обкатки цепочки без ключа. См. README, раздел 'Настройка судьи'."""
 
+    backend_name = "cli"
+
     def __init__(self, binary: str = "claude"):
         self.messages = _CLIMessages(binary)
 
