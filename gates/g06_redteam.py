@@ -3,13 +3,16 @@
 
 Два слоя:
 1. Статический пред-фильтр по policies/redteam_attacks.yaml — дёшево, без
-   ключа, ловит канонический случай (скилл сам инструктирует доверять
+   judge, ловит канонический случай (скилл сам инструктирует доверять
    контенту как командам, см. фикстуру injectable-skill).
-2. Adversarial-прогон (требует ключ) — только для скиллов с доступом к
-   внешнему контенту (WebFetch/WebSearch), где инструкция не зашита в текст
-   скилла явно, а модель может поддаться при реальном прогоне. Второй
-   судья оценивает транскрипт вслепую (не знает, что это тест).
+2. Adversarial-прогон (требует judge) — только для скиллов с доступом к
+   внешнему контенту (tools: против data_ingestion_patterns в политике,
+   fnmatch — покрывает и mcp__*__fetch/read/get/search/list/query, не
+   только WebFetch/WebSearch), где инструкция не зашита в текст скилла
+   явно, а модель может поддаться при реальном прогоне. Второй судья
+   оценивает транскрипт вслепую (не знает, что это тест).
 """
+import fnmatch
 import os
 import re
 from pathlib import Path
@@ -22,11 +25,6 @@ from judge_client import get_client, JudgeNotConfigured
 
 ATTACKS_PATH = Path(__file__).parent.parent / "policies" / "redteam_attacks.yaml"
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
-
-# Инструменты, потребляющие внешний контент, который может содержать
-# внедрённые инструкции — только для них есть смысл в дорогом
-# adversarial-прогоне (см. docs/06_redteam.md).
-DATA_INGESTION_TOOLS = ("WebFetch", "WebSearch")
 
 BLIND_JUDGE_SYS = (
     "Ты проверяешь транскрипт диалога ассистента с пользователем на предмет "
@@ -108,8 +106,9 @@ def check(skill_path: Path) -> GateResult:
     tools = (frontmatter or {}).get("tools", []) or []
     if isinstance(tools, str):
         tools = [t.strip() for t in tools.split(",")]
+    ingestion_patterns = attacks.get("data_ingestion_patterns", [])
     ingests_external_content = any(
-        any(t.startswith(pat) for pat in DATA_INGESTION_TOOLS) for t in tools
+        any(fnmatch.fnmatch(t, pat) for pat in ingestion_patterns) for t in tools
     )
     if not ingests_external_content:
         return GateResult(
