@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 PASS = "pass"
 FAIL = "fail"
 NOT_IMPLEMENTED = "not_implemented"
+NOT_CONFIGURED = "not_configured"  # код есть, но нет кредов/окружения для вызова
 SKIPPED = "skipped"
 
 

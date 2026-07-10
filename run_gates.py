@@ -36,7 +36,13 @@ def run_skill(skill_path: Path, config: dict) -> dict:
 def print_report(skill_name: str, results: list):
     print(f"\n=== {skill_name} ===")
     for gate_id, result in results:
-        icon = {"pass": "PASS", "fail": "FAIL", "not_implemented": "SKIP(TODO)", "skipped": "SKIP"}
+        icon = {
+            "pass": "PASS",
+            "fail": "FAIL",
+            "not_implemented": "SKIP(TODO)",
+            "not_configured": "SKIP(CFG)",
+            "skipped": "SKIP",
+        }
         label = icon.get(result.status, result.status.upper())
         print(f"  [{label:10}] {gate_id}: {result.message}")
     ran_ids = {g for g, _ in results}

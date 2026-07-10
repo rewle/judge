@@ -28,6 +28,10 @@ policies:
   tools_allowlist: policies/tools_allowlist.yaml
   rubric_criteria: policies/rubric_criteria.yaml
 
+judge:
+  model: claude-sonnet-5   # можно переопределить env JUDGE_MODEL
+  n_runs: 8                # прогонов для оценки стабильности (sigma)
+
 thresholds:
   duplication_similarity: 0.85     # выше — считается дублем
   rubric_min_score: 0.7            # средний балл по рубрике ниже — fail
