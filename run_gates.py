@@ -58,13 +58,20 @@ def print_report(skill_name: str, results: list):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--skill", help="имя одного скилла из paths.skills_dir")
+    parser.add_argument(
+        "--path",
+        help="путь к конкретной папке скилла вне skills_dir (для локальной проверки "
+        "нового скилла, см. new_skill.py); имеет приоритет над --skill",
+    )
     args = parser.parse_args()
 
     sys.path.insert(0, str(ROOT))
     config = load_config()
     skills_dir = ROOT / config["paths"]["skills_dir"]
 
-    if args.skill:
+    if args.path:
+        skill_dirs = [Path(args.path).expanduser()]
+    elif args.skill:
         skill_dirs = [skills_dir / args.skill]
     else:
         skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir())
