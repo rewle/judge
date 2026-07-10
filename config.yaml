@@ -7,6 +7,9 @@ gates:
   - id: 02_permissions
     module: gates.g02_permissions
     enabled: true
+  - id: 08_file_refs
+    module: gates.g08_file_refs
+    enabled: true
   - id: 03_duplication
     module: gates.g03_duplication
     enabled: true
@@ -23,6 +26,10 @@ gates:
 paths:
   skills_dir: examples/skills      # какие скиллы проверять
   registry_dir: examples/skills    # с чем сравнивать на дубли (в проде — весь реестр)
+  # external_state_root: examples/external_state  # гейт 08: корень для ссылок
+  # "прочитай <путь>"/"read <путь>" вне skills_dir (шаблоны, конфиги общей
+  # базы знаний). Не задано по умолчанию — конвенция новая, гейт 08 SKIPPED,
+  # пока путь явно не сконфигурирован под конкретную целевую систему.
 
 policies:
   tools_allowlist: policies/tools_allowlist.yaml
