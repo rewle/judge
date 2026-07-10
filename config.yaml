@@ -49,3 +49,4 @@ thresholds:
   token_efficiency_max_overhead_pct: 30       # overhead ниже — PASS без проверки coverage
   token_efficiency_min_coverage_gain_pp: 10   # overhead выше порога — нужен прирост coverage не меньше этого, иначе fail
   chain_io_compat_min_score: 0.6   # гейт 07: judge-оценка совместимости provides:/ожиданий A ниже — fail (не откалибровано)
+  chain_token_budget_max: 8000     # гейт 07: сумма input-токенов A + транзитивных uses: выше — fail (не откалибровано)

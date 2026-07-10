@@ -1,3 +1,11 @@
 {"skill": "pdf-invoice-extract", "model": "sonnet", "backend": "cli", "timestamp": "2026-07-10T14:16:22.885080+00:00", "overall_mean": 0.764, "overall_sigma": 0.014}
 {"skill": "pdf-invoice-extract", "model": "sonnet", "backend": "cli", "timestamp": "2026-07-10T14:16:54.345785+00:00", "overall_mean": 0.781, "overall_sigma": 0.041}
 {"skill": "pdf-invoice-extract", "model": "sonnet", "backend": "cli", "timestamp": "2026-07-10T14:17:54.004325+00:00", "overall_mean": 0.786, "overall_sigma": 0.05}
+{"skill": "api-changelog-writer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T18:58:08.428460+00:00", "overall_mean": 0.237, "overall_sigma": 0.033}
+{"skill": "web-page-summarizer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T18:59:03.901152+00:00", "overall_mean": 0.324, "overall_sigma": 0.048}
+{"skill": "csv-column-rename", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:00:11.100950+00:00", "overall_mean": 0.266, "overall_sigma": 0.027}
+{"skill": "file-ref-broken-skill", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:10:58.863968+00:00", "overall_mean": 0.381, "overall_sigma": 0.016}
+{"skill": "file-ref-valid-skill", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:11:41.417145+00:00", "overall_mean": 0.431, "overall_sigma": 0.037}
+{"skill": "api-changelog-writer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:12:15.738817+00:00", "overall_mean": 0.257, "overall_sigma": 0.034}
+{"skill": "web-page-summarizer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:13:23.813251+00:00", "overall_mean": 0.316, "overall_sigma": 0.052}
+{"skill": "csv-column-rename", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:14:02.859770+00:00", "overall_mean": 0.26, "overall_sigma": 0.02}
