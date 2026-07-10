@@ -45,8 +45,13 @@ def check(skill_path: Path) -> GateResult:
     baseline_user = f"{input_data}\n\nЗАДАЧА:\n{query}".strip()
     with_skill_user = f"СКИЛЛ:\n{skill_text}\n\n{input_data}\n\nЗАДАЧА:\n{query}".strip()
 
-    baseline_tokens = count_input_tokens(client, model, agent_sys, baseline_user)
-    with_skill_tokens = count_input_tokens(client, model, agent_sys, with_skill_user)
+    try:
+        baseline_tokens = count_input_tokens(client, model, agent_sys, baseline_user)
+        with_skill_tokens = count_input_tokens(client, model, agent_sys, with_skill_user)
+    except JudgeNotConfigured as e:
+        # Бэкенд доступен (get_client() не бросил), но не умеет count_tokens
+        # без генерации (например JUDGE_BACKEND=cli) — гейту это критично.
+        return GateResult(NOT_CONFIGURED, str(e), {})
     overhead_pct = (
         (with_skill_tokens - baseline_tokens) / baseline_tokens * 100 if baseline_tokens else 0.0
     )
