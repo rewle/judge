@@ -3,6 +3,10 @@
 первый FAIL останавливает цепочку для этого скилла (следующие гейты не
 запускаются). NOT_IMPLEMENTED/SKIPPED не блокируют — цепочка продолжается,
 но помечается как неполная.
+
+--check-chains — отдельный режим: гейт 07 (см. gates/g07_chain.py) не
+входит в последовательную per-skill цепочку выше, потому что реестровый
+(видит граф uses: целиком, не один скилл) — см. docs/roadmap_chains.md.
 """
 import argparse
 import importlib
@@ -55,6 +59,24 @@ def print_report(skill_name: str, results: list):
         print("  -> не все гейты реализованы")
 
 
+def run_chains(registry_dir: Path) -> dict:
+    from gates.g07_chain import check_registry
+
+    return check_registry(registry_dir)
+
+
+def print_chains_report(results: dict):
+    print(f"\n=== 07_chain (граф uses:, {len(results)} скиллов) ===")
+    any_fail = False
+    for name in sorted(results):
+        result = results[name]
+        label = "FAIL" if result.status == FAIL else result.status.upper()
+        print(f"  [{label:4}] {name}: {result.message}")
+        if result.status == FAIL:
+            any_fail = True
+    return any_fail
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--skill", help="имя одного скилла из paths.skills_dir")
@@ -63,10 +85,29 @@ def main():
         help="путь к конкретной папке скилла вне skills_dir (для локальной проверки "
         "нового скилла, см. new_skill.py); имеет приоритет над --skill",
     )
+    parser.add_argument(
+        "--check-chains",
+        action="store_true",
+        help="прогнать гейт 07 (граф uses:) вместо последовательной цепочки 01-06 — "
+        "реестровая проверка, см. --registry",
+    )
+    parser.add_argument(
+        "--registry",
+        help="реестр для --check-chains (по умолчанию — paths.registry_dir из config.yaml)",
+    )
     args = parser.parse_args()
 
     sys.path.insert(0, str(ROOT))
     config = load_config()
+
+    if args.check_chains:
+        registry_dir = (
+            Path(args.registry).expanduser() if args.registry else ROOT / config["paths"]["registry_dir"]
+        )
+        results = run_chains(registry_dir)
+        any_fail = print_chains_report(results)
+        sys.exit(1 if any_fail else 0)
+
     skills_dir = ROOT / config["paths"]["skills_dir"]
 
     if args.path:
