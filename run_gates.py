@@ -4,9 +4,13 @@
 запускаются). NOT_IMPLEMENTED/SKIPPED не блокируют — цепочка продолжается,
 но помечается как неполная.
 
---check-chains — отдельный режим: гейт 07 (см. gates/g07_chain.py) не
-входит в последовательную per-skill цепочку выше, потому что реестровый
-(видит граф uses: целиком, не один скилл) — см. docs/roadmap_chains.md.
+Гейт 07 (см. gates/g07_chain.py) не входит в последовательную per-skill
+цепочку выше, потому что реестровый (видит граф uses: целиком, не один
+скилл) — см. docs/roadmap_chains.md. При полном прогоне реестра (без
+--skill/--path) запускается автоматически после того, как все скиллы
+реестра прошли 01-06 (--skip-chains отключает). При точечной проверке
+одного скилла (--skill/--path) не запускается — граф целиком проверять
+незачем. --check-chains гоняет только гейт 07, отдельно, без 01-06.
 """
 import argparse
 import importlib
@@ -95,6 +99,11 @@ def main():
         "--registry",
         help="реестр для --check-chains (по умолчанию — paths.registry_dir из config.yaml)",
     )
+    parser.add_argument(
+        "--skip-chains",
+        action="store_true",
+        help="не запускать гейт 07 автоматически после полного прогона реестра",
+    )
     args = parser.parse_args()
 
     sys.path.insert(0, str(ROOT))
@@ -110,6 +119,7 @@ def main():
 
     skills_dir = ROOT / config["paths"]["skills_dir"]
 
+    full_registry_run = not args.path and not args.skill
     if args.path:
         skill_dirs = [Path(args.path).expanduser()]
     elif args.skill:
@@ -123,6 +133,15 @@ def main():
         print_report(skill_dir.name, results)
         if any(r.status == FAIL for _, r in results):
             any_fail = True
+
+    if full_registry_run and not args.skip_chains:
+        if any_fail:
+            print("\n=== 07_chain пропущен: не все скиллы реестра прошли 01-06 ===")
+        else:
+            registry_dir = ROOT / config["paths"]["registry_dir"]
+            chain_results = run_chains(registry_dir)
+            if print_chains_report(chain_results):
+                any_fail = True
 
     sys.exit(1 if any_fail else 0)
 
