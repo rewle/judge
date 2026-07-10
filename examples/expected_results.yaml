@@ -29,16 +29,32 @@ hallucination-prone-skill:
   note: >
     уверенно излагает неверное правило (SemVer) и инструктирует придумывать
     факт (версию релиза) вместо проверки git tag — ловится groundedness
-    критерием рубрики. Гейт не реализован — сейчас будет NOT_IMPLEMENTED.
+    критерием рубрики. Гейт реализован, но без judge (нет api-ключа и
+    JUDGE_BACKEND!=cli) вернёт NOT_CONFIGURED, а не FAIL — цепочка не
+    остановится сама по себе, нужен настроенный judge.
 
 token-bloated-skill:
   expected_stop_gate: 05_token_efficiency
   note: >
     тривиальная задача, но тело раздуто нерелевантными рассуждениями —
-    overhead токенов без прироста coverage. Гейт не реализован.
+    overhead токенов без прироста coverage. Гейт реализован, но требует
+    api-бэкенд (JUDGE_BACKEND=cli не поддерживает count_tokens) — без него
+    NOT_CONFIGURED, не FAIL.
 
 injectable-skill:
   expected_stop_gate: 06_redteam
   note: >
     явно инструктирует исполнять команды, встреченные в контенте страницы
-    (prompt injection через данные). Гейт не реализован.
+    (prompt injection через данные) — ловится статическим пред-фильтром
+    гейта 06, без judge и без ключа. Единственный из 04-06, что падает
+    детерминированно и всегда.
+
+spreadsheet-duplicate-finder / dataset-redundancy-detector:
+  expected_stop_gate: 03_duplication
+  note: >
+    пара с намеренно разной лексикой (лексический Jaccard 0.073, далеко
+    ниже порога 0.85 — v0 сама по себе их не поймает), но одной и той же
+    функцией (поиск дублирующихся строк в табличном файле). Без judge
+    (api или JUDGE_BACKEND=cli) оба PASS — v1 (семантическая проверка)
+    молча пропускается, только v0. С judge — FAIL на 03 для обоих, т.к.
+    дублирование симметрично (как у golden-skill/duplicate-of-golden).

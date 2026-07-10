@@ -1,5 +1,9 @@
 """Гейт 03 — дублирование. v0: эвристика по пересечению слов (детерминированная,
-без внешних вызовов). См. docs/03_duplication.md про план перехода на embeddings."""
+без внешних вызовов, всегда включена). v1: опциональный semantic-пас через
+judge для пар, которые v0 не поймал (одна функция, разные слова) — только
+если judge доступен (api или cli), иначе гейт остаётся v0-only, как раньше.
+См. docs/03_duplication.md."""
+import os
 import re
 from pathlib import Path
 
@@ -7,9 +11,39 @@ import yaml
 
 from gates.base import GateResult, PASS, FAIL
 from gates.g01_static import _read_skill
+from judge_client import JudgeNotConfigured, get_client
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
 STOPWORDS = {"и", "в", "на", "с", "по", "для", "не", "из", "или", "как", "the", "a", "to", "of", "and"}
+
+_DUP_TOOL = {
+    "name": "submit_duplication_verdict",
+    "description": (
+        "Оценить, решают ли два скилла одну и ту же задачу для пользователя "
+        "по существу — даже если написаны разными словами, на разных языках "
+        "или с разной структурой."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "functionally_duplicate": {"type": "boolean"},
+            "similarity": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "0 — про разное, 1 — решают одну и ту же задачу тем же способом",
+            },
+            "reason": {"type": "string"},
+        },
+        "required": ["functionally_duplicate", "similarity", "reason"],
+    },
+}
+
+DUP_JUDGE_SYS = (
+    "Ты проверяешь реестр skill-документов на функциональное дублирование. "
+    "Тебя не обманывает разница в словах, языке или структуре текста — важно, "
+    "решает ли скилл B ту же задачу пользователя, что и скилл A. Оцени честно."
+)
 
 
 def _tokenize(text: str) -> set:
@@ -23,18 +57,40 @@ def _jaccard(a: set, b: set) -> float:
     return len(a & b) / len(a | b)
 
 
+def _judge_pair(client, model: str, own_text: str, other_text: str) -> dict:
+    user = f"СКИЛЛ A:\n<<<\n{own_text}\n>>>\n\nСКИЛЛ B:\n<<<\n{other_text}\n>>>"
+    resp = client.messages.create(
+        model=model,
+        max_tokens=512,
+        system=DUP_JUDGE_SYS,
+        messages=[{"role": "user", "content": user}],
+        tools=[_DUP_TOOL],
+        tool_choice={"type": "tool", "name": "submit_duplication_verdict"},
+    )
+    for block in resp.content:
+        if block.type == "tool_use":
+            return block.input
+    raise RuntimeError("judge не вернул tool_use блок с вердиктом о дублировании")
+
+
 def check(skill_path: Path, registry_dir: Path = None) -> GateResult:
     frontmatter, body, text = _read_skill(skill_path)
     if frontmatter is None:
         return GateResult(FAIL, "нет frontmatter", {})
 
     config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    threshold = config["thresholds"]["duplication_similarity"]
+    thresholds = config["thresholds"]
+    lexical_threshold = thresholds["duplication_similarity"]
+    prefilter = thresholds.get("duplication_semantic_prefilter", 0.05)
+    semantic_threshold = thresholds.get("duplication_semantic_similarity", 0.8)
     registry_dir = registry_dir or (Path(__file__).parent.parent / config["paths"]["registry_dir"])
 
     own_tokens = _tokenize((frontmatter.get("description", "") or "") + " " + (body or ""))
 
-    matches = []
+    lexical_matches = []
+    # Кандидаты на семантическую проверку: v0 их не поймал, но и не совсем
+    # непохожи лексически — дешёвый способ не звать judge на явно чужие темы.
+    semantic_candidates = []
     for other_dir in sorted(registry_dir.iterdir()):
         if not other_dir.is_dir() or other_dir.resolve() == skill_path.resolve():
             continue
@@ -43,14 +99,64 @@ def check(skill_path: Path, registry_dir: Path = None) -> GateResult:
             continue
         other_tokens = _tokenize((other_fm.get("description", "") or "") + " " + (other_body or ""))
         sim = _jaccard(own_tokens, other_tokens)
-        if sim >= threshold:
-            matches.append((other_dir.name, round(sim, 3)))
+        if sim >= lexical_threshold:
+            lexical_matches.append((other_dir.name, round(sim, 3)))
+        elif sim >= prefilter:
+            semantic_candidates.append((other_dir.name, other_text, round(sim, 3)))
 
-    if matches:
-        details_str = ", ".join(f"{name} (sim={sim})" for name, sim in matches)
+    if lexical_matches:
+        details_str = ", ".join(f"{name} (sim={sim})" for name, sim in lexical_matches)
         return GateResult(
             FAIL,
-            f"похож на существующие скиллы: {details_str} (порог {threshold})",
-            {"matches": matches},
+            f"похож на существующие скиллы: {details_str} (порог {lexical_threshold})",
+            {"lexical_matches": lexical_matches},
         )
-    return GateResult(PASS, "дублей выше порога не найдено (v0: word-overlap эвристика)", {})
+
+    details = {"lexical_matches": [], "semantic_checked": [c[0] for c in semantic_candidates]}
+
+    if not semantic_candidates:
+        return GateResult(
+            PASS,
+            "дублей выше лексического порога не найдено, семантических кандидатов нет",
+            details,
+        )
+
+    try:
+        client = get_client()
+    except JudgeNotConfigured:
+        details["note"] = "v1 (семантическая проверка) пропущена — judge не настроен"
+        return GateResult(
+            PASS,
+            f"v0 чист; {len(semantic_candidates)} лексически-близких кандидатов не проверены "
+            f"семантически (нет judge)",
+            details,
+        )
+
+    judge_cfg = config.get("judge", {})
+    model = os.environ.get("JUDGE_MODEL", judge_cfg.get("model", "claude-sonnet-5"))
+
+    semantic_matches = []
+    verdicts = {}
+    for name, other_text, lexical_sim in semantic_candidates:
+        verdict = _judge_pair(client, model, text, other_text)
+        verdict["lexical_sim"] = lexical_sim
+        verdicts[name] = verdict
+        if verdict["functionally_duplicate"] and verdict["similarity"] >= semantic_threshold:
+            semantic_matches.append((name, verdict))
+
+    details["semantic_verdicts"] = verdicts
+
+    if semantic_matches:
+        details_str = ", ".join(f"{name} (similarity={v['similarity']})" for name, v in semantic_matches)
+        return GateResult(
+            FAIL,
+            f"функциональный дубль (v1, разные слова — одна задача): {details_str} "
+            f"(порог {semantic_threshold})",
+            details,
+        )
+    return GateResult(
+        PASS,
+        f"дублей не найдено (v0 + семантическая проверка v1, {model}, "
+        f"{len(semantic_candidates)} кандидатов проверено)",
+        details,
+    )
