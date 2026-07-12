@@ -168,7 +168,14 @@ def check(skill_path: Path) -> GateResult:
             f"средний балл {overall_mean:.3f} ниже порога {thresholds['rubric_min_score']}; "
             f"худшие критерии: {worst_str}"
         )
-    unstable_criteria = [c for c, v in per_criterion.items() if v["sigma"] > thresholds["rubric_max_sigma"]]
+    # Для отдельного критерия — свой порог: 0.02 откалиброван для среднего
+    # по ~7 критериям, дисперсия одиночного критерия заведомо выше
+    # (усреднение по k критериям сжимает sigma примерно в sqrt(k) раз), и
+    # перенос той же цифры валил бы почти любой честный прогон по
+    # "нестабильности". Фолбэк на rubric_max_sigma — только для старых
+    # конфигов без нового ключа.
+    criterion_sigma_threshold = thresholds.get("rubric_max_criterion_sigma", thresholds["rubric_max_sigma"])
+    unstable_criteria = [c for c, v in per_criterion.items() if v["sigma"] > criterion_sigma_threshold]
     overall_unstable = overall_sigma > thresholds["rubric_max_sigma"]
     if overall_unstable or unstable_criteria:
         # Не утверждать "overall sigma выше порога", если сработали только
@@ -179,7 +186,7 @@ def check(skill_path: Path) -> GateResult:
             parts.append(f"overall sigma {overall_sigma:.3f} выше порога {thresholds['rubric_max_sigma']}")
         if unstable_criteria:
             parts.append(
-                f"нестабильны по отдельности (sigma выше {thresholds['rubric_max_sigma']}): "
+                f"нестабильны по отдельности (sigma выше {criterion_sigma_threshold}): "
                 + ", ".join(f"{c}={per_criterion[c]['sigma']:.3f}" for c in unstable_criteria)
             )
         errors.append("судья нестабилен — " + "; ".join(parts))

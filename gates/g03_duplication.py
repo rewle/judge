@@ -160,9 +160,12 @@ def check(skill_path: Path, registry_dir: Path = None) -> GateResult:
             verdict = dict(cached)
             cache_hits += 1
         else:
-            verdict = _judge_pair(client, model, text, other_text)
-            cache[key] = verdict
+            fresh = _judge_pair(client, model, text, other_text)
+            cache[key] = fresh
             cache_dirty = True
+            verdict = dict(fresh)
+        # lexical_sim — на копии, не на объекте в кэше: значение направленное
+        # (зависит от того, кто A), а ключ кэша симметричный.
         verdict["lexical_sim"] = lexical_sim
         verdicts[name] = verdict
         if verdict["functionally_duplicate"] and verdict["similarity"] >= semantic_threshold:

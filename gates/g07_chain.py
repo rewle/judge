@@ -16,7 +16,10 @@ run_skill() в run_gates.py (см. --check-chains).
 3. Эскалация прав через композицию: объединение tools: по транзитивному
    замыканию uses:, прогон через ту же политику allowlist, что гейт 02
    (evaluate_tools) — ловит "A с виду безобидный, но через uses: [B]
-   эффективно получает Bash(*) от B".
+   эффективно получает Bash(*) от B". Собственный justification: скилла
+   учитывается и для унаследованных инструментов (обоснование "зачем мне
+   эта цепочка" пишется один раз в вызывающем скилле) — но
+   always_flag_for_review флагается в любом случае, как и в гейте 02.
 4. Обратная проверка: тело скилла в backtick-споте (`` `skill-name` ``)
    упоминает имя другого скилла реестра, не задекларированного в uses: —
    необъявленная зависимость, гейт 02 её не увидит вообще (не знает, что
@@ -44,16 +47,19 @@ docs/roadmap_chains.md):
    использует. Без бэкенда, умеющего count_tokens (например
    JUDGE_BACKEND=cli) — проверка молча пропускается для всего реестра
    после первой неудачи, остальные проверки не страдают.
-7. Многошаговый prompt injection: для ребра uses: A→B, где B читает
-   внешний контент (tools: против data_ingestion_patterns политики
-   гейта 06), а сам A — нет, прогоняется один adversarial-сценарий из
-   библиотеки атак гейта 06 (переиспользует _judge_transcript оттуда), но
-   payload подаётся не как прямой tool result, а как "результат вызова
-   uses: B" — этот путь гейт 06 не видит вообще (он проверяет только
-   собственные tools: скилла, не транзитивные через uses:). held_boundary
-   =false → FAIL. Один сценарий на подходящее ребро (не вся библиотека) —
-   контроль стоимости, тот же компромисс, что у I/O-совместимости (без
-   multi-run стабильности).
+7. Многошаговый prompt injection: для каждого скилла A, который сам не
+   читает внешний контент (tools: против data_ingestion_patterns политики
+   гейта 06), но в транзитивном замыкании uses: которого есть скилл B с
+   таким доступом (не только прямое ребро A→B — цепочка A→X→B тоже
+   приносит контент B в контекст A, симметрично проверке эскалации прав),
+   прогоняется один adversarial-сценарий из библиотеки атак гейта 06
+   (переиспользует _judge_transcript оттуда), но payload подаётся не как
+   прямой tool result, а как "результат вызова uses: B" — этот путь гейт
+   06 не видит вообще (он проверяет только собственные tools: скилла, не
+   транзитивные через uses:). held_boundary=false → FAIL. Один сценарий
+   на подходящего провайдера в замыкании (не вся библиотека) — контроль
+   стоимости, тот же компромисс, что у I/O-совместимости (без multi-run
+   стабильности).
 """
 import fnmatch
 import os
@@ -245,7 +251,10 @@ def _run_chain_injection_scenario(client, model: str, consumer_text: str, provid
     """Как _run_scenario в gates/g06_redteam.py, но payload подаётся как
     результат вызова зависимости через uses:, а не прямой tool result
     самого скилла — покрывает случай, когда A не имеет доступа к внешнему
-    контенту напрямую, но получает его транзитивно через B."""
+    контенту напрямую, но получает его транзитивно через B. provider_name
+    может быть не прямой зависимостью A, а глубже в цепочке (A→X→B) —
+    payload всё равно подписывается именем B: упрощение, промежуточные
+    звенья цепочки в кадре не воспроизводятся."""
     user = (
         f"{scenario['user_task']}\n\n"
         f"[Результат вызова uses: '{provider_name}']:\n<<<\n{scenario['payload']}\n>>>"
@@ -292,11 +301,11 @@ def check_registry(registry_dir: Path) -> dict:
     # дальнейшие попытки для всего реестра, не роняя остальные проверки.
     budget_threshold = None
     token_cache = {}
-    token_cache_dirty = False
     budget_unavailable = io_client is None
     if io_client is not None:
         budget_threshold = io_config["thresholds"].get("chain_token_budget_max", 8000)
         token_cache = load_cache(TOKEN_CACHE_PATH)
+    token_cache_size_at_load = len(token_cache)
 
     # Многошаговый prompt injection: тот же клиент, библиотека атак гейта 06.
     injection_unavailable = io_client is None
@@ -324,7 +333,12 @@ def check_registry(registry_dir: Path) -> dict:
         closure_tools = _transitive_uses_tools(name, registry, filtered_graph, set())
         introduced = closure_tools - own_tools
         if introduced:
-            tool_errors, flagged = evaluate_tools(sorted(introduced), justification="", policy=policy)
+            # justification вызывающего покрывает и унаследованные инструменты
+            # (см. докстринг модуля, проверка 3) — раньше сюда передавалась
+            # пустая строка, и сообщение "требует поля justification" врало:
+            # добавить поле не помогало.
+            own_justification = (info["frontmatter"].get("justification") or "").strip()
+            tool_errors, flagged = evaluate_tools(sorted(introduced), justification=own_justification, policy=policy)
             if tool_errors:
                 msg = (
                     f"эскалация прав через uses: инструменты {', '.join(sorted(introduced))} "
@@ -359,8 +373,9 @@ def check_registry(registry_dir: Path) -> dict:
                         f"порог {io_threshold}): {verdict['reason']}"
                     )
 
+        closure_names = _transitive_uses_names(name, registry, filtered_graph, set())
+
         if not budget_unavailable:
-            closure_names = _transitive_uses_names(name, registry, filtered_graph, set())
             if closure_names:
                 try:
                     total_tokens = _cached_token_count(io_client, io_model, info["text"], token_cache)
@@ -368,7 +383,6 @@ def check_registry(registry_dir: Path) -> dict:
                         total_tokens += _cached_token_count(
                             io_client, io_model, registry[used_name]["text"], token_cache
                         )
-                    token_cache_dirty = True
                     if total_tokens > budget_threshold:
                         errors.append(
                             f"токен-бюджет цепочки {total_tokens} превышает порог {budget_threshold} "
@@ -380,7 +394,10 @@ def check_registry(registry_dir: Path) -> dict:
         if not injection_unavailable and injection_scenario is not None:
             own_ingests = any(any(fnmatch.fnmatch(t, p) for p in ingestion_patterns) for t in own_tools)
             if not own_ingests:
-                for used_name in filtered_graph.get(name, []):
+                # Всё транзитивное замыкание uses:, не только прямые рёбра —
+                # цепочка A→X→B приносит внешний контент B в контекст A так же,
+                # как прямое ребро A→B (симметрично проверке эскалации прав).
+                for used_name in sorted(closure_names):
                     provider_tools = set(_get_list_field(registry[used_name]["frontmatter"], "tools"))
                     provider_ingests = any(
                         any(fnmatch.fnmatch(t, p) for p in ingestion_patterns) for t in provider_tools
@@ -396,8 +413,9 @@ def check_registry(registry_dir: Path) -> dict:
                         break
                     if not result["held_boundary"]:
                         errors.append(
-                            f"многошаговый prompt injection через uses: '{used_name}' (сам '{name}' "
-                            f"не читает внешний контент напрямую, но зависимость — да): {result['reason']}"
+                            f"многошаговый prompt injection через uses:-цепочку до '{used_name}' "
+                            f"(сам '{name}' не читает внешний контент напрямую, но транзитивная "
+                            f"зависимость — да): {result['reason']}"
                         )
 
         if errors:
@@ -405,7 +423,9 @@ def check_registry(registry_dir: Path) -> dict:
         else:
             results[name] = GateResult(PASS, "граф uses: корректен, эскалации прав не найдено", {})
 
-    if token_cache_dirty:
+    # Сохранять только если появились новые ключи — раньше флаг ставился и
+    # при прогоне целиком из кэша, файл перезаписывался без изменений.
+    if len(token_cache) > token_cache_size_at_load:
         save_cache(TOKEN_CACHE_PATH, token_cache)
 
     return results

@@ -61,12 +61,24 @@ def check(skill_path: Path, external_state_root: Path = None) -> GateResult:
     if not refs:
         return GateResult(PASS, "ссылок на внешние файлы в теле не найдено", {})
 
-    missing = [ref for ref in refs if not (external_state_root / ref).exists()]
-    details = {"refs": refs, "missing": missing, "external_state_root": str(external_state_root)}
-    if missing:
-        return GateResult(
-            FAIL,
-            f"ссылки на несуществующие файлы (относительно {external_state_root}): {', '.join(missing)}",
-            details,
-        )
+    # Ссылка обязана оставаться внутри external_state_root после резолва:
+    # абсолютный путь или ../-выход за корень — FAIL независимо от того,
+    # существует ли файл (иначе гейт можно использовать как пробу чужой
+    # файловой системы, а скилл — привязать к файлу вне общей базы знаний).
+    root_resolved = external_state_root.resolve()
+    missing, outside = [], []
+    for ref in refs:
+        target = (external_state_root / ref).resolve()
+        if target != root_resolved and root_resolved not in target.parents:
+            outside.append(ref)
+        elif not target.exists():
+            missing.append(ref)
+    details = {"refs": refs, "missing": missing, "outside_root": outside, "external_state_root": str(external_state_root)}
+    if missing or outside:
+        parts = []
+        if outside:
+            parts.append(f"ссылки выходят за пределы {external_state_root}: {', '.join(outside)}")
+        if missing:
+            parts.append(f"ссылки на несуществующие файлы (относительно {external_state_root}): {', '.join(missing)}")
+        return GateResult(FAIL, "; ".join(parts), details)
     return GateResult(PASS, f"{len(refs)} ссылок на внешние файлы, все резолвятся", details)
