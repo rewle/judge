@@ -127,30 +127,68 @@ def check(skill_path: Path) -> GateResult:
             ex.map(lambda _: _judge_once(client, model, skill_text, rubric, tool_schema), range(n_runs))
         )
 
-    # Стабильность считается на уровне усреднённого по критериям балла
-    # каждого прогона (как в ноутбуке-первоисточнике), а не сигмой по
-    # отдельным критериям — это то, что там же откалибровано порогом 0.02.
+    # overall_sigma — на уровне усреднённого по критериям балла каждого
+    # прогона (как в ноутбуке-первоисточнике, там же откалиброван порог
+    # 0.02). Но усреднение может маскировать нестабильность одного
+    # конкретного критерия (судья мечется 0.1<->0.9 по groundedness, но
+    # стабилен по остальным пяти — overall_sigma выйдет обманчиво низкой),
+    # поэтому дополнительно считаем sigma по каждому критерию отдельно
+    # (per_criterion_sigma) и проверяем на тот же порог (см. ревью).
+    # statistics.stdev (выборочное), не pstdev (популяционное) — n=8 это
+    # выборка, не вся популяция возможных прогонов.
     run_scores = [statistics.mean(v["score"] for v in run.values()) for run in runs]
     overall_mean = statistics.mean(run_scores)
-    overall_sigma = statistics.pstdev(run_scores)
+    overall_sigma = statistics.stdev(run_scores) if len(run_scores) > 1 else 0.0
 
-    per_criterion = {
-        crit: round(statistics.mean(run[crit]["score"] for run in runs), 3) for crit in rubric
-    }
+    per_criterion = {}
+    for crit in rubric:
+        scores = [run[crit]["score"] for run in runs]
+        crit_mean = statistics.mean(scores)
+        crit_sigma = statistics.stdev(scores) if len(scores) > 1 else 0.0
+        # Представительная reason — из прогона, чей score ближе всего к
+        # среднему по этому критерию (не все 8 reason сразу — избыточно).
+        closest_run = min(runs, key=lambda run: abs(run[crit]["score"] - crit_mean))
+        per_criterion[crit] = {
+            "score": round(crit_mean, 3),
+            "sigma": round(crit_sigma, 3),
+            "reason": closest_run[crit]["reason"],
+        }
+
+    max_criterion_sigma = max((v["sigma"] for v in per_criterion.values()), default=0.0)
 
     thresholds = config["thresholds"]
     errors = []
     if overall_mean < thresholds["rubric_min_score"]:
-        errors.append(f"средний балл {overall_mean:.3f} ниже порога {thresholds['rubric_min_score']}")
-    if overall_sigma > thresholds["rubric_max_sigma"]:
+        # Худшие критерии + их reason — в сообщении, не только в details
+        # (см. ревью): голое число "conciseness: 0.4" не объясняет, что
+        # именно не так с текстом.
+        worst = sorted(per_criterion.items(), key=lambda kv: kv[1]["score"])[:2]
+        worst_str = "; ".join(f"{c}={v['score']:.2f} ({v['reason']})" for c, v in worst)
         errors.append(
-            f"sigma {overall_sigma:.3f} выше порога {thresholds['rubric_max_sigma']} — судья нестабилен"
+            f"средний балл {overall_mean:.3f} ниже порога {thresholds['rubric_min_score']}; "
+            f"худшие критерии: {worst_str}"
         )
+    unstable_criteria = [c for c, v in per_criterion.items() if v["sigma"] > thresholds["rubric_max_sigma"]]
+    overall_unstable = overall_sigma > thresholds["rubric_max_sigma"]
+    if overall_unstable or unstable_criteria:
+        # Не утверждать "overall sigma выше порога", если сработали только
+        # per-criterion (overall может быть в норме — усреднение как раз
+        # маскирует нестабильность одного критерия, см. докстринг выше).
+        parts = []
+        if overall_unstable:
+            parts.append(f"overall sigma {overall_sigma:.3f} выше порога {thresholds['rubric_max_sigma']}")
+        if unstable_criteria:
+            parts.append(
+                f"нестабильны по отдельности (sigma выше {thresholds['rubric_max_sigma']}): "
+                + ", ".join(f"{c}={per_criterion[c]['sigma']:.3f}" for c in unstable_criteria)
+            )
+        errors.append("судья нестабилен — " + "; ".join(parts))
 
     details = {
         "per_criterion": per_criterion,
         "overall_mean": round(overall_mean, 3),
         "overall_sigma": round(overall_sigma, 3),
+        "max_criterion_sigma": round(max_criterion_sigma, 3),
         "run_scores": [round(s, 3) for s in run_scores],
         "model": model,
         "backend": backend,

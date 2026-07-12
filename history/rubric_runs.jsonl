@@ -9,3 +9,6 @@
 {"skill": "api-changelog-writer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:12:15.738817+00:00", "overall_mean": 0.257, "overall_sigma": 0.034}
 {"skill": "web-page-summarizer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:13:23.813251+00:00", "overall_mean": 0.316, "overall_sigma": 0.052}
 {"skill": "csv-column-rename", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:14:02.859770+00:00", "overall_mean": 0.26, "overall_sigma": 0.02}
+{"skill": "api-changelog-writer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:37:43.907354+00:00", "overall_mean": 0.251, "overall_sigma": 0.019}
+{"skill": "api-changelog-writer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:38:53.797462+00:00", "overall_mean": 0.243, "overall_sigma": 0.049}
+{"skill": "pdf-invoice-extract", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:41:01.440333+00:00", "overall_mean": 0.764, "overall_sigma": 0.024}

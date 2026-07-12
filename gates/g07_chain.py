@@ -333,7 +333,10 @@ def check_registry(registry_dir: Path) -> dict:
                 )
                 if flagged:
                     flagged_str = ", ".join(f"{t} ~ {p}" for t, p in flagged)
-                    msg += f"; требует ручного ревью: {flagged_str}"
+                    msg += (
+                        f"; требует ручного review человеком вне этого пайплайна "
+                        f"(always_flag_for_review, не проходит автоматически): {flagged_str}"
+                    )
                 errors.append(msg)
 
         mentioned = _mentioned_skill_names(info["body"], registry_names, name)

@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from types import SimpleNamespace
 
 import anthropic
@@ -33,6 +34,53 @@ class JudgeBackendError(RuntimeError):
     """Судья был доступен, но конкретный вызов сломался (ошибка процесса,
     невалидный вывод и т.п.) — в отличие от JudgeNotConfigured, это не
     ожидаемое состояние, а сбой, который стоит явно увидеть."""
+
+
+# Транзиентные ошибки api-бэкенда — стоит повторить, а не сразу ронять весь
+# прогон реестра (см. ревью: раньше ни один вызов judge не был обёрнут в
+# retry сверх дефолта SDK, один rate-limit посреди ThreadPoolExecutor в
+# гейте 04 или цикла по рёбрам в гейте 07 убивал весь run_gates.py).
+_RETRIABLE_API_EXCEPTIONS = (
+    anthropic.APIConnectionError,
+    anthropic.APITimeoutError,
+    anthropic.RateLimitError,
+    anthropic.InternalServerError,
+)
+
+
+class _RetryingMessages:
+    """Оборачивает .create()/.count_tokens() любого бэкенда (api или cli)
+    ретраями с экспоненциальной паузой — единая точка изменения вместо
+    правки try/except в каждом месте вызова judge по всем гейтам.
+
+    Для cli-бэкенда ретраится JudgeBackendError целиком — включая
+    неслучайные баги (например баг самого гейта в форме вызова CLI), не
+    только сетевые сбои: разделить их по типу исключения нельзя (cli
+    оборачивает всё в один класс), это осознанное упрощение, а не
+    гарантия, что retry всегда уместен для cli."""
+
+    def __init__(self, inner, retriable: tuple, max_retries: int = 3, base_delay: float = 1.0):
+        self._inner = inner
+        self._retriable = retriable
+        self._max_retries = max_retries
+        self._base_delay = base_delay
+
+    def _with_retry(self, fn, *args, **kwargs):
+        attempt = 0
+        while True:
+            try:
+                return fn(*args, **kwargs)
+            except self._retriable:
+                attempt += 1
+                if attempt > self._max_retries:
+                    raise
+                time.sleep(self._base_delay * (2 ** (attempt - 1)))
+
+    def create(self, *args, **kwargs):
+        return self._with_retry(self._inner.create, *args, **kwargs)
+
+    def count_tokens(self, *args, **kwargs):
+        return self._with_retry(self._inner.count_tokens, *args, **kwargs)
 
 
 class _CLIMessages:
@@ -131,7 +179,11 @@ def get_client():
                 f"JUDGE_BACKEND=cli, но бинарник '{binary}' не найден в PATH — "
                 "нужен установленный Claude Code CLI (npm i -g @anthropic-ai/claude-code)."
             )
-        return ClaudeCLIClient(binary)
+        cli_client = ClaudeCLIClient(binary)
+        return SimpleNamespace(
+            messages=_RetryingMessages(cli_client.messages, (JudgeBackendError,)),
+            backend_name="cli",
+        )
 
     if backend != "api":
         raise JudgeNotConfigured(
@@ -149,4 +201,8 @@ def get_client():
     base_url = os.environ.get("JUDGE_BASE_URL")
     if base_url:
         kwargs["base_url"] = base_url
-    return anthropic.Anthropic(**kwargs)
+    api_client = anthropic.Anthropic(**kwargs)
+    return SimpleNamespace(
+        messages=_RetryingMessages(api_client.messages, _RETRIABLE_API_EXCEPTIONS),
+        backend_name="api",
+    )

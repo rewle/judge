@@ -66,7 +66,11 @@ def check(skill_path: Path) -> GateResult:
 
     if flagged:
         details_str = ", ".join(f"{t} ~ {p}" for t, p in flagged)
-        errors.append(f"требует ручного ревью (гейт 06): {details_str}")
+        errors.append(
+            f"требует ручного review человеком вне этого пайплайна (always_flag_for_review, "
+            f"не проходит автоматически даже с обоснованием — гейт 06 для этого PR не запустится, "
+            f"цепочка остановлена раньше): {details_str}"
+        )
 
     if errors:
         return GateResult(FAIL, "; ".join(errors), {"errors": errors, "flagged": flagged})

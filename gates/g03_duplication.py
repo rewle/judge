@@ -175,7 +175,12 @@ def check(skill_path: Path, registry_dir: Path = None) -> GateResult:
     details["cache_hits"] = cache_hits
 
     if semantic_matches:
-        details_str = ", ".join(f"{name} (similarity={v['similarity']})" for name, v in semantic_matches)
+        # reason судьи — прямо в сообщении, не только в details: иначе
+        # человек, смотрящий на голый вывод run_gates.py, видит имя+число
+        # без единого слова объяснения, почему это дубль (см. ревью).
+        details_str = "; ".join(
+            f"{name} (similarity={v['similarity']}): {v['reason']}" for name, v in semantic_matches
+        )
         return GateResult(
             FAIL,
             f"функциональный дубль (v1, разные слова — одна задача): {details_str} "

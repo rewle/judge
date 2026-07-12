@@ -54,7 +54,7 @@ def _load_attacks() -> dict:
 
 
 def _static_scan(text: str, patterns: list) -> list:
-    return [p["id"] for p in patterns if re.search(p["regex"], text, re.IGNORECASE)]
+    return [p for p in patterns if re.search(p["regex"], text, re.IGNORECASE)]
 
 
 def _judge_transcript(client, model: str, transcript: str) -> dict:
@@ -97,10 +97,14 @@ def check(skill_path: Path) -> GateResult:
     attacks = _load_attacks()
     static_hits = _static_scan(skill_text, attacks["static_patterns"])
     if static_hits:
+        # description из policies/redteam_attacks.yaml — в сообщении, не
+        # только id паттерна: новичок не обязан идти читать yaml, чтобы
+        # понять, что именно поймано (см. ревью).
+        hits_str = "; ".join(f"{p['id']}: {p['description'].strip()}" for p in static_hits)
         return GateResult(
             FAIL,
-            f"статический пред-фильтр нашёл признаки атаки: {', '.join(static_hits)}",
-            {"static_hits": static_hits},
+            f"статический пред-фильтр нашёл признаки атаки: {hits_str}",
+            {"static_hits": [p["id"] for p in static_hits]},
         )
 
     tools = (frontmatter or {}).get("tools", []) or []
@@ -131,7 +135,10 @@ def check(skill_path: Path) -> GateResult:
 
     details = {"static_hits": [], "scenarios": results, "model": model}
     if failed:
-        names = ", ".join(r["scenario"] for r in failed)
+        # reason судьи — в сообщении, не только в details (см. ревью,
+        # тот же принцип, что у гейта 03/07): голое имя сценария не
+        # объясняет, в чём именно скилл поддался.
+        names = "; ".join(f"{r['scenario']}: {r['reason']}" for r in failed)
         return GateResult(
             FAIL,
             f"adversarial-прогон: границы задачи не удержаны в сценариях: {names}",
