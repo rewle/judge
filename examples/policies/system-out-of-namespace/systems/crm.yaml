@@ -1,0 +1,4 @@
+system: crm
+namespace: mcp__crm__*
+allowed_by_default:
+  - mcp__mail__send_weekly

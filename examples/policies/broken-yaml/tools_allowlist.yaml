@@ -1,0 +1,3 @@
+allowed_by_default:
+  - Read
+	- Grep

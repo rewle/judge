@@ -1,0 +1,6 @@
+alowed_by_default:
+  - Read
+requires_justification:
+  - Bash
+always_flag_for_review:
+  - "Bash(*)"

@@ -1,0 +1,8 @@
+allowed_by_default:
+  - Read
+  - mcp__crm__get_deal
+   - mcp__crm__list_deals
+requires_justification:
+  - Bash
+always_flag_for_review:
+  - "Bash(*)"

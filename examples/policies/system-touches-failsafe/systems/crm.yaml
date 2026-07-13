@@ -1,0 +1,3 @@
+system: crm
+namespace: mcp__crm__*
+always_flag_for_review: []

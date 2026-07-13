@@ -1,0 +1,5 @@
+allowed_by_default: Read, Grep, Glob
+requires_justification:
+  - Bash
+always_flag_for_review:
+  - "Bash(*)"
