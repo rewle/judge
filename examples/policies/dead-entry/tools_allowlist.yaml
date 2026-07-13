@@ -1,0 +1,8 @@
+allowed_by_default:
+  - Read
+  - mcp__crm__delete_deal
+requires_justification:
+  - Bash
+always_flag_for_review:
+  - "Bash(*)"
+  - "mcp__*__delete*"

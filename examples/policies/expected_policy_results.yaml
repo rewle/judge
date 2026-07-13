@@ -1,0 +1,97 @@
+# Оракул фикстур битых политик (по одной на ветку валидатора
+# _load_policy/_validate_policy/_validate_system_policy в
+# gates/g02_permissions.py). Прогон одной фикстуры:
+#   python3 run_gates.py --check-policy examples/policies/<case>
+# Ожидание: exit=0 для expect: ok, exit=2 для expect: fail, и сообщение
+# содержит подстроку must_mention. Автопроверка всех разом — /judge-regress.
+# Каждая негативная фикстура — реальная ошибка владельца системы/админа из
+# UX-прогонов 2026-07-13 (docs/personas.md, портреты 3-4).
+
+valid-with-system:
+  expect: ok
+  note: >
+    позитивный контроль: валидная глобальная политика + валидный файл
+    системы systems/crm.yaml (паттерн в allowed, литерал в requires).
+    Здесь crm-namespace безопасен — это фикстурный корень, а не живой
+    policies/, поэтому премиса unknown-tool-skill не задета.
+
+broken-yaml:
+  expect: fail
+  must_mention: "не парсится как YAML"
+  note: таб вместо пробелов — до валидации это был голый traceback.
+
+glued-lines:
+  expect: fail
+  must_mention: "склеились"
+  note: >
+    сбитый отступ молча превращал две записи в одну строку
+    'mcp__crm__get_deal - mcp__crm__list_deals', и гейт 02 советовал
+    автору скилла добавить инструмент, который владелец только что добавил.
+
+typo-key:
+  expect: fail
+  must_mention: "опечатка в 'allowed_by_default'"
+  note: >
+    ключ alowed_by_default молча опустошал allowlist — Read внезапно
+    «не в allowlist». Валидатор подсказывает ближайший известный ключ.
+
+csv-string:
+  expect: fail
+  must_mention: "CSV-запись здесь не работает"
+  note: >
+    строка вместо списка превращалась в набор символов (set поверх str);
+    ловушка усилена тем, что tools: в frontmatter скилла CSV допускает.
+
+dead-entry:
+  expect: fail
+  must_mention: "запись мёртвая"
+  note: >
+    mcp__crm__delete_deal в allowed_by_default подпадает под предохранитель
+    mcp__*__delete* — на рантайме предохранитель всё равно победит, запись
+    только обещает то, чего гейт никогда не сделает.
+
+missing-failsafe:
+  expect: fail
+  must_mention: "нет обязательного ключа 'always_flag_for_review'"
+  note: >
+    удаление ключа предохранителя раньше проходило МОЛЧА — скилл с delete
+    шёл на зелёный. Все три ключа обязательны; сознательно пустой список —
+    только явный [].
+
+system-out-of-namespace:
+  expect: fail
+  must_mention: "выходит за namespace"
+  note: >
+    владелец CRM вносит mcp__mail__send_weekly — «гейт для политик»
+    (решение 1C) не даёт владельцу управлять чужими инструментами.
+
+system-touches-failsafe:
+  expect: fail
+  must_mention: "предохранитель глобальный"
+  note: >
+    always_flag_for_review в файле системы запрещён даже пустым списком —
+    предохранитель правит только админ реестра в глобальном файле.
+
+system-namespace-overlap:
+  expect: fail
+  must_mention: "пересекается с namespace"
+  note: >
+    два файла систем с одним namespace mcp__crm__* — одна система, один
+    владелец; пересечение владений ловится на загрузке.
+
+system-name-mismatch:
+  expect: fail
+  must_mention: "не совпадает с именем файла"
+  note: >
+    system: billing в файле crm.yaml — файл и система должны называться
+    одинаково, иначе владение по файлу (CODEOWNERS) теряет смысл.
+
+system-dead-entry:
+  expect: fail
+  must_mention: "запись мёртвая"
+  note: >
+    литеральный mcp__crm__delete_deal в allowed_by_default файла СВОЕЙ
+    системы подпадает под глобальный предохранитель mcp__*__delete* —
+    та же мёртвая запись, что в dead-entry, но через путь 1C (сверка
+    возможна только после мёрджа: у файла системы нет своего always_flag).
+    Паттерн-записи не сверяются — см. docs/02_permissions.md.

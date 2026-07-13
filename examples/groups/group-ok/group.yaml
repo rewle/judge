@@ -1,0 +1,11 @@
+# Позитивная фикстура манифеста группы (решение 2B, проверяемый —
+# docs/design_multisystem_groups.md): декларация совпадает с фактом.
+# Прогон: python3 run_gates.py --check-chains --registry examples/groups/group-ok
+name: dwh-reporting
+members:
+  - dwh-loader
+  - dwh-reporter
+systems:
+  dwh: read
+reviewer_note: |
+  Группа только читает витрины DWH и отдаёт сводку; записи и отправки нет.

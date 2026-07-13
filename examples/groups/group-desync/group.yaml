@@ -1,0 +1,13 @@
+# Негативная фикстура манифеста группы (решение 2B): декларация врёт
+# по обеим осям — заявлен член, которого нет в папке (ghost-skill), и
+# заявлена система crm, которую никто не использует, тогда как фактически
+# используемая mail не заявлена. Ожидание: FAIL строки group.yaml.
+# Прогон: python3 run_gates.py --check-chains --registry examples/groups/group-desync
+name: weekly-digest
+members:
+  - mail-notifier
+  - ghost-skill
+systems:
+  crm: read
+reviewer_note: |
+  Манифест написан по старой версии группы и не обновлён.

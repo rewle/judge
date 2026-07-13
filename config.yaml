@@ -31,9 +31,10 @@ paths:
   # базы знаний). Не задано по умолчанию — конвенция новая, гейт 08 SKIPPED,
   # пока путь явно не сконфигурирован под конкретную целевую систему.
 
-policies:
-  tools_allowlist: policies/tools_allowlist.yaml
-  rubric_criteria: policies/rubric_criteria.yaml
+# Пути к файлам политик (policies/*.yaml) не конфигурируются — они
+# фиксированы в гейтах (02: tools_allowlist, 04: rubric_criteria,
+# 06: redteam_attacks). Секции 'policies' здесь сознательно нет: раньше она
+# была, но её не читал ни один гейт — ручка, которая обещает и не делает.
 
 judge:
   model: claude-sonnet-5   # можно переопределить env JUDGE_MODEL

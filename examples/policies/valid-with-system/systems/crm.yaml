@@ -1,0 +1,6 @@
+system: crm
+namespace: mcp__crm__*
+allowed_by_default:
+  - mcp__crm__get_*
+requires_justification:
+  - mcp__crm__update_deal

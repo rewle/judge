@@ -1,0 +1,4 @@
+allowed_by_default:
+  - Read
+requires_justification:
+  - Bash

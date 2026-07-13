@@ -1,0 +1,4 @@
+system: crm2
+namespace: mcp__crm__*
+allowed_by_default:
+  - mcp__crm__list_deals
