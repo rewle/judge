@@ -138,8 +138,8 @@ def check(skill_path: Path, registry_dir: Path = None) -> GateResult:
         details["note"] = "v1 (семантическая проверка) пропущена — judge не настроен"
         return GateResult(
             PASS,
-            f"v0 чист; {len(semantic_candidates)} лексически-близких кандидатов не проверены "
-            f"семантически (нет judge)",
+            f"дублей не найдено (сверка по словам); {len(semantic_candidates)} похожих скиллов "
+            f"не сверены по смыслу — для этого нужен judge (см. README про JUDGE_BACKEND)",
             details,
         )
 
