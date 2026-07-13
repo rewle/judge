@@ -1,0 +1,16 @@
+# Политика системы DWH (хранилище данных). Живой пример формата
+# policies/systems/<system>.yaml (решение 1C, docs/design_multisystem_groups.md):
+# файл сопровождает ВЛАДЕЛЕЦ этой системы, judge валидирует его при загрузке
+# («гейт для политик»): записи не могут выйти за namespace, ключ
+# always_flag_for_review здесь запрещён — предохранитель глобальный.
+# Записи могут быть fnmatch-паттернами; предохранитель на рантайме побеждает
+# любой паттерн (широкий паттерн не открывает send/delete).
+system: dwh
+namespace: mcp__dwh__*
+
+allowed_by_default:
+  - mcp__dwh__list_tables
+
+requires_justification:
+  - mcp__dwh__query
+  - mcp__dwh__export_*

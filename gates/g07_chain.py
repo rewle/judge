@@ -71,7 +71,7 @@ import yaml
 from cache_store import content_hash, load_cache, save_cache
 from gates.base import GateResult, PASS, FAIL
 from gates.g01_static import _read_skill
-from gates.g02_permissions import _load_policy, evaluate_tools
+from gates.g02_permissions import POLICY_REL, PolicyError, _load_policy, evaluate_tools
 from gates.g06_redteam import _judge_transcript as _g06_judge_transcript, _load_attacks as _g06_load_attacks
 from judge_client import get_client, JudgeNotConfigured
 
@@ -134,6 +134,118 @@ def _load_registry(registry_dir: Path) -> dict:
             continue
         registry[name] = {"dir": skill_dir, "frontmatter": frontmatter, "body": body or "", "text": text or ""}
     return registry
+
+
+_GROUP_KEYS = ("name", "members", "systems", "reviewer_note")
+
+
+def _mcp_system(tool: str):
+    """mcp__crm__get_deal -> crm; не-MCP инструменты (Read, Bash(*)) -> None."""
+    if not tool.startswith("mcp__"):
+        return None
+    parts = tool.split("__")
+    return parts[1] if len(parts) >= 3 and parts[1] else None
+
+
+def _check_group_manifest(registry_dir: Path, registry: dict, policy: dict):
+    """Проверяемый манифест группы (решение 2B, см.
+    docs/design_multisystem_groups.md): group.yaml декларирует членов и
+    внешние системы, гейт сверяет декларацию с фактом — рассинхрон это FAIL,
+    манифест не может врать. Отсутствие файла — сегодняшнее поведение
+    байт-в-байт (новичок и реестры без манифеста ничего не замечают).
+    Режимы систем (crm: read) — контекст для ревьюера, семантика режима не
+    верифицируется; но по always_flag_for_review манифест заранее говорит,
+    что группа гарантированно уйдёт на ручное ревью."""
+    manifest_path = registry_dir / "group.yaml"
+    if not manifest_path.is_file():
+        return None
+    raw = manifest_path.read_text(encoding="utf-8")
+    try:
+        data = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        loc = f" (строка {mark.line + 1})" if mark is not None else ""
+        problem = getattr(exc, "problem", None) or str(exc)
+        return GateResult(FAIL, f"манифест группы не парсится как YAML{loc}: {problem}", {})
+
+    errors = []
+    if not isinstance(data, dict):
+        return GateResult(
+            FAIL,
+            f"манифест группы: ожидается маппинг с ключами {', '.join(_GROUP_KEYS)}",
+            {},
+        )
+    for key in data:
+        if key not in _GROUP_KEYS:
+            errors.append(f"неизвестный ключ '{key}' (известные: {', '.join(_GROUP_KEYS)})")
+    if not isinstance(data.get("name"), str) or not data.get("name"):
+        errors.append("нет обязательного ключа 'name' (имя группы строкой)")
+
+    members = data.get("members")
+    if not isinstance(members, list) or not all(isinstance(m, str) for m in members or []):
+        errors.append("'members' должен быть списком имён скиллов")
+        members = []
+    declared_members = set(members)
+    actual_members = set(registry.keys())
+    missing = sorted(declared_members - actual_members)
+    undeclared = sorted(actual_members - declared_members)
+    if missing:
+        errors.append(f"заявленных членов нет в реестре: {', '.join(missing)}")
+    if undeclared:
+        errors.append(
+            f"скиллы в папке не заявлены в манифесте: {', '.join(undeclared)} — "
+            f"дополни members или убери лишний скилл"
+        )
+
+    systems = data.get("systems")
+    if systems is None:
+        systems = {}
+    if not isinstance(systems, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) and v.strip() for k, v in systems.items()
+    ):
+        errors.append("'systems' должен быть маппингом {система: режим-строка}")
+        systems = {}
+
+    all_tools = set()
+    for info in registry.values():
+        all_tools |= set(_get_list_field(info["frontmatter"], "tools"))
+    actual_systems = {s for s in (_mcp_system(t) for t in all_tools) if s}
+    declared_systems = set(systems.keys())
+    ghost = sorted(declared_systems - actual_systems)
+    unlisted = sorted(actual_systems - declared_systems)
+    if ghost:
+        errors.append(f"заявленные системы не используются ни одним tools: {', '.join(ghost)}")
+    if unlisted:
+        errors.append(
+            f"скиллы группы используют системы, не заявленные в манифесте: "
+            f"{', '.join(unlisted)} — дополни systems"
+        )
+
+    always_flag = policy.get("always_flag_for_review") or []
+    flagged = sorted(
+        {t for t in all_tools for p in always_flag if fnmatch.fnmatch(t, p)}
+    )
+    review_note = (
+        f" — группа гарантированно потребует ручного ревью (always_flag_for_review): "
+        f"{', '.join(flagged)}"
+        if flagged
+        else ""
+    )
+
+    details = {
+        "declared_members": sorted(declared_members),
+        "declared_systems": {k: systems[k] for k in sorted(systems)},
+        "actual_systems": sorted(actual_systems),
+        "flagged_tools": flagged,
+    }
+    if errors:
+        return GateResult(FAIL, "манифест группы разошёлся с фактом: " + "; ".join(errors), details)
+    return GateResult(
+        PASS,
+        f"манифест группы сверен с фактом: {len(actual_members)} членов, "
+        f"системы: {', '.join(sorted(actual_systems)) or 'нет MCP-систем'}{review_note}",
+        details,
+    )
 
 
 def _judge_io_compat(client, model: str, consumer_text: str, provider_name: str, provider_fm: dict) -> dict:
@@ -281,7 +393,12 @@ def check_registry(registry_dir: Path) -> dict:
     cycle = _find_cycle(filtered_graph)
     cycle_members = set(cycle[:-1]) if cycle else set()
 
-    policy = _load_policy()
+    try:
+        policy = _load_policy()
+    except PolicyError as exc:
+        # Битая политика — не повод ронять раннер traceback'ом: отчёт по
+        # реестру из одной FAIL-строки, атрибутированной файлу политики.
+        return {POLICY_REL: GateResult(FAIL, str(exc), {"policy_error": True})}
 
     io_client = None
     io_model = None
@@ -337,7 +454,9 @@ def check_registry(registry_dir: Path) -> dict:
             # (см. докстринг модуля, проверка 3) — раньше сюда передавалась
             # пустая строка, и сообщение "требует поля justification" врало:
             # добавить поле не помогало.
-            own_justification = (info["frontmatter"].get("justification") or "").strip()
+            # Строка или карта (решение 3B) — нормализует evaluate_tools;
+            # .strip() здесь падал бы на карте.
+            own_justification = info["frontmatter"].get("justification")
             tool_errors, flagged = evaluate_tools(sorted(introduced), justification=own_justification, policy=policy)
             if tool_errors:
                 msg = (
@@ -427,5 +546,9 @@ def check_registry(registry_dir: Path) -> dict:
     # при прогоне целиком из кэша, файл перезаписывался без изменений.
     if len(token_cache) > token_cache_size_at_load:
         save_cache(TOKEN_CACHE_PATH, token_cache)
+
+    group_result = _check_group_manifest(registry_dir, registry, policy)
+    if group_result is not None:
+        results["group.yaml"] = group_result
 
     return results
