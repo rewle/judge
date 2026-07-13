@@ -44,7 +44,8 @@ thresholds:
   duplication_semantic_prefilter: 0.05  # v1: ниже — пара даже не идёт к judge (контроль стоимости на O(N^2))
   duplication_semantic_similarity: 0.8  # v1: judge-оценка similarity выше — считается функциональным дублем
   rubric_min_score: 0.7            # средний балл по рубрике ниже — fail
-  rubric_max_sigma: 0.02           # нестабильность судьи выше — fail (см. skill_eval методологию)
+  rubric_max_sigma: 0.02           # нестабильность overall-балла выше — fail (откалибровано в ноутбуке-первоисточнике для среднего по критериям)
+  rubric_max_criterion_sigma: 0.05 # sigma отдельного критерия выше — fail (не откалибровано: у одного критерия дисперсия заведомо выше, чем у среднего по ~7, порог 0.02 сюда переносить нельзя)
   rubric_drift_warn_abs: 0.1       # |mean - предыдущий mean той же связки skill+model+backend| выше — non-blocking предупреждение, не fail
   token_efficiency_max_overhead_pct: 30       # overhead ниже — PASS без проверки coverage
   token_efficiency_min_coverage_gain_pp: 10   # overhead выше порога — нужен прирост coverage не меньше этого, иначе fail

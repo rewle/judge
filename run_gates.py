@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from gates.base import FAIL, NOT_IMPLEMENTED, SKIPPED
+from gates.base import FAIL, NOT_CONFIGURED, NOT_IMPLEMENTED, SKIPPED
 
 ROOT = Path(__file__).parent
 
@@ -62,6 +62,18 @@ def print_report(skill_name: str, results: list):
         print(f"  -> цепочка остановлена на {stopped_at}")
     elif stopped_early:
         print("  -> не все гейты реализованы")
+    else:
+        # Явный вердикт на успехе: без него новичок видит хвост из PASS/SKIP и
+        # не уверен, всё ли хорошо (особенно пугает SKIP(CFG) у judge-гейтов).
+        # SKIP — это «не запускался», не «провал»: цепочку он не блокирует.
+        skipped = [g for g, r in results if r.status in (SKIPPED, NOT_CONFIGURED, NOT_IMPLEMENTED)]
+        verdict = "  -> блокирующих гейтов нет — скилл проходит проверку"
+        if skipped:
+            verdict += (
+                f" (гейты {', '.join(skipped)} пропущены — не настроен judge/eval, "
+                f"это не провал; см. README про JUDGE_BACKEND)"
+            )
+        print(verdict)
 
 
 def run_chains(registry_dir: Path) -> dict:

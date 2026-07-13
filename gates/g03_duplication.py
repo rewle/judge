@@ -138,8 +138,8 @@ def check(skill_path: Path, registry_dir: Path = None) -> GateResult:
         details["note"] = "v1 (семантическая проверка) пропущена — judge не настроен"
         return GateResult(
             PASS,
-            f"v0 чист; {len(semantic_candidates)} лексически-близких кандидатов не проверены "
-            f"семантически (нет judge)",
+            f"дублей не найдено (сверка по словам); {len(semantic_candidates)} похожих скиллов "
+            f"не сверены по смыслу — для этого нужен judge (см. README про JUDGE_BACKEND)",
             details,
         )
 
@@ -160,9 +160,12 @@ def check(skill_path: Path, registry_dir: Path = None) -> GateResult:
             verdict = dict(cached)
             cache_hits += 1
         else:
-            verdict = _judge_pair(client, model, text, other_text)
-            cache[key] = verdict
+            fresh = _judge_pair(client, model, text, other_text)
+            cache[key] = fresh
             cache_dirty = True
+            verdict = dict(fresh)
+        # lexical_sim — на копии, не на объекте в кэше: значение направленное
+        # (зависит от того, кто A), а ключ кэша симметричный.
         verdict["lexical_sim"] = lexical_sim
         verdicts[name] = verdict
         if verdict["functionally_duplicate"] and verdict["similarity"] >= semantic_threshold:
