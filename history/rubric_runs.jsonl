@@ -12,3 +12,10 @@
 {"skill": "api-changelog-writer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:37:43.907354+00:00", "overall_mean": 0.251, "overall_sigma": 0.019}
 {"skill": "api-changelog-writer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:38:53.797462+00:00", "overall_mean": 0.243, "overall_sigma": 0.049}
 {"skill": "pdf-invoice-extract", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-10T19:41:01.440333+00:00", "overall_mean": 0.764, "overall_sigma": 0.024}
+{"skill": "stale-record-janitor", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-13T20:00:47.655806+00:00", "overall_mean": 0.256, "overall_sigma": 0.036}
+{"skill": "pipeline-step-runner", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-13T20:04:21.814801+00:00", "overall_mean": 0.266, "overall_sigma": 0.029}
+{"skill": "creative-brief-writer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-13T20:06:11.224794+00:00", "overall_mean": 0.174, "overall_sigma": 0.024}
+{"skill": "file-ref-broken-skill", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-13T20:07:39.653067+00:00", "overall_mean": 0.372, "overall_sigma": 0.015}
+{"skill": "file-ref-escape-skill", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-13T20:10:51.793672+00:00", "overall_mean": 0.234, "overall_sigma": 0.018}
+{"skill": "file-ref-valid-skill", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-13T20:11:46.583581+00:00", "overall_mean": 0.446, "overall_sigma": 0.028}
+{"skill": "api-changelog-writer", "model": "claude-sonnet-5", "backend": "cli", "timestamp": "2026-07-13T20:13:24.614798+00:00", "overall_mean": 0.259, "overall_sigma": 0.031}

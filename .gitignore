@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+
+# эфемерные артефакты прогонов run_scenario.py (docs/09_scenario_emulator.md) —
+# не фикстуры, не коммитить
+runs/
