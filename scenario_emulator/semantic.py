@@ -9,6 +9,7 @@
 Принимает уже сконфигурированный client+model (см. docs/09_scenario_emulator.md,
 "Ядро эмулятора") — не создаёт свой, раннер уже получил их для генерации
 реплик (`scenario_emulator/runner.py`), повторный get_client() тут не нужен."""
+import re
 
 _SYSTEM_PROMPT = (
     "Ты оцениваешь трейс диалога тестового сценария. Тебе даны цель диалога "
@@ -40,7 +41,28 @@ def _render_transcript(events: list) -> str:
             lines.append(f"Пользователь: {e['content']}")
         elif e.get("type") == "assistant_message":
             lines.append(f"Стенд: {e['content']}")
+        elif e.get("type") == "widget_confirm":
+            lines.append(
+                f"Пользователь [виджет]: нажата кнопка «Подтвердить» "
+                f"(confirmation_id={e.get('confirmation_id')}) — "
+                f"подтверждение передано детерминированно, минуя модель"
+            )
     return "\n".join(lines) if lines else "(диалог пуст — ни одной реплики)"
+
+
+# cli-бэкенд (claude -p --json-schema) изредка оставляет в строковых полях
+# structured_output хвост tool-use-разметки вида "</reason>\n</invoke>\n" —
+# наблюдалось живым прогоном 2026-07-17 (deposit-topup-flow). На вердикт не
+# влияет, но мусор попадал в report.json как есть. Срезаем только замыкающую
+# последовательность закрывающих тегов в самом конце строки — легитимный
+# текст reason так не заканчивается.
+_TRAILING_TAG_JUNK = re.compile(r"(?:\s*</[\w.-]+>)+\s*$")
+
+
+def _strip_tag_junk(value):
+    if isinstance(value, str):
+        return _TRAILING_TAG_JUNK.sub("", value).rstrip()
+    return value
 
 
 def evaluate_semantic(client, model: str, goal_text: str, events: list) -> dict:
@@ -54,5 +76,5 @@ def evaluate_semantic(client, model: str, goal_text: str, events: list) -> dict:
     )
     for block in resp.content:
         if block.type == "tool_use":
-            return block.input
+            return {k: _strip_tag_junk(v) for k, v in block.input.items()}
     raise RuntimeError("judge не вернул tool_use блок с вердиктом (семантическая оценка)")

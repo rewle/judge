@@ -11,7 +11,11 @@ docs/09_scenario_emulator.md. Не гейт из config.yaml/run_gates.py —
 """
 import argparse
 import json
+import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +24,30 @@ from scenario_emulator.scenario import ScenarioError, load_scenario
 from scenario_emulator.stand_client import DirectStandClient
 
 REPO_ROOT = Path(__file__).parent
+
+
+def _compose(compose_path: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["docker", "compose", "-f", str(compose_path), *args],
+        capture_output=True, text=True,
+    )
+
+
+def _wait_stand_ready(stand_url: str, timeout: float = 30.0) -> None:
+    """Ждём, пока стенд начнёт отвечать по HTTP. Компоуз-стенды обязаны
+    отдавать GET /health (см. docs/09, аддендум 2026-07-16); любой
+    HTTP-ответ (включая не-200) означает "сервис слушает"."""
+    url = stand_url.rstrip("/") + "/health"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2):
+                return
+        except urllib.error.HTTPError:
+            return  # сервис слушает, статус не важен
+        except (urllib.error.URLError, TimeoutError, OSError):
+            time.sleep(0.5)
+    raise RuntimeError(f"стенд не ответил на {url} за {timeout:.0f} c после docker compose up")
 
 
 def main():
@@ -45,8 +73,26 @@ def main():
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = args.out_dir / f"{scenario.path.stem}_{timestamp}"
 
+    compose_path = None
+    if scenario.compose_file:
+        compose_path = REPO_ROOT / scenario.compose_file
+        if not compose_path.is_file():
+            print(f"ошибка сценария: compose_file не найден: {compose_path}", file=sys.stderr)
+            sys.exit(1)
+        proc = _compose(compose_path, "up", "-d", "--build")
+        if proc.returncode != 0:
+            print(f"docker compose up упал:\n{proc.stderr[-2000:]}", file=sys.stderr)
+            sys.exit(1)
+
     stand_client = None
     try:
+        if compose_path is not None:
+            try:
+                _wait_stand_ready(scenario.stand_url)
+            except RuntimeError as e:
+                print(str(e), file=sys.stderr)
+                sys.exit(1)
+
         if args.no_sandbox:
             stand_client = DirectStandClient(scenario.stand_url)
         else:
@@ -69,6 +115,10 @@ def main():
     finally:
         if stand_client is not None and hasattr(stand_client, "close"):
             stand_client.close()
+        if compose_path is not None:
+            down = _compose(compose_path, "down")
+            if down.returncode != 0:
+                print(f"предупреждение: docker compose down упал:\n{down.stderr[-2000:]}", file=sys.stderr)
 
     run_dir.mkdir(parents=True, exist_ok=True)
     report_path = run_dir / "report.json"

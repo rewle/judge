@@ -40,14 +40,18 @@ def _reply(session: dict, content: str) -> str:
             f"({_COMMISSION_RATE}% от остатка {_BALANCE}₽). Уже проведённые "
             f"платежи отменить или вернуть нельзя. Подтвердите закрытие."
         )
+    # Подтверждение проверяется РАНЬШЕ справки про комиссию: реплика вида
+    # «согласен с комиссией, подтверждаю — закрывайте» содержит и
+    # confirm-слово, и «комисси» — до перестановки (2026-07-17) она вечно
+    # уходила в справку, счёт было невозможно закрыть такой фразой.
+    if account["status"] == "pending_confirmation" and any(w in text for w in _CONFIRM_WORDS):
+        account["status"] = "closed"
+        return f"Счёт {_ACCOUNT_ID} закрыт, комиссия {commission}₽ списана."
     if "комисси" in text:
         return (
             f"Комиссия за закрытие счёта {_ACCOUNT_ID} — {_COMMISSION_RATE}% "
             f"от остатка, сейчас это {commission}₽."
         )
-    if account["status"] == "pending_confirmation" and any(w in text for w in _CONFIRM_WORDS):
-        account["status"] = "closed"
-        return f"Счёт {_ACCOUNT_ID} закрыт, комиссия {commission}₽ списана."
     return f"Уточните, пожалуйста: закрыть счёт {_ACCOUNT_ID} или узнать про комиссию?"
 
 

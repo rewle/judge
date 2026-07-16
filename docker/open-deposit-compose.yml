@@ -1,0 +1,57 @@
+# Стенд open-deposit: 3 сервиса из одного образа (docker/open_deposit.Dockerfile),
+# граница «харнесс не пускает widget-callback в модель, а зовёт тул
+# напрямую» — отдельные процессы и сеть, см.
+# scenario_emulator/open_deposit/{tool,harness,ui_gateway}.py.
+#
+# Наружу опубликован только ui-gateway (127.0.0.1:8767) — harness/tool
+# недостижимы ни с хоста, ни для раннера напрямую (только через
+# ui-gateway); это второй уровень изоляции поверх --sandbox
+# (relay+iptables пускают раннер только к stand_url).
+services:
+  tool:
+    build: &build
+      context: ..
+      dockerfile: docker/open_deposit.Dockerfile
+    image: judge-open-deposit-stand
+    command: python /app/tool.py --host 0.0.0.0 --port 8769
+    networks: [open-deposit-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8769/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  harness:
+    build: *build
+    image: judge-open-deposit-stand
+    command: python /app/harness.py --host 0.0.0.0 --port 8768
+    environment:
+      TOOL_URL: http://tool:8769
+    depends_on:
+      tool: {condition: service_healthy}
+    networks: [open-deposit-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8768/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  ui-gateway:
+    build: *build
+    image: judge-open-deposit-stand
+    command: python /app/ui_gateway.py --host 0.0.0.0 --port 8767
+    environment:
+      UPSTREAM_URL: http://harness:8768
+    depends_on:
+      harness: {condition: service_healthy}
+    ports:
+      - "127.0.0.1:8767:8767"
+    networks: [open-deposit-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8767/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+networks:
+  open-deposit-net: {}

@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>open-deposit — референс-архитектура</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #eef1f6;
+    --canvas-bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f3f5f9;
+    --border: #d3d9e3;
+    --border-soft: #c7ced9;
+    --text: #171b22;
+    --text-muted: #5a6474;
+    --text-faint: #8993a3;
+    --line-neutral: #7c8797;
+    --amber: #b97a12;
+    --amber-soft: #fbeed9;
+    --amber-line: #c98a1c;
+    --teal: #0f8f62;
+    --teal-soft: #e2f5ec;
+    --teal-line: #17a374;
+    --ok: #17915f;
+    --warn: #b06a06;
+    --grid-line: rgba(90, 100, 120, 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151a;
+      --canvas-bg: #12151a;
+      --surface: #1a1e26;
+      --surface-2: #20242e;
+      --border: #313847;
+      --border-soft: #3a4152;
+      --text: #eef1f5;
+      --text-muted: #97a1b0;
+      --text-faint: #6b7484;
+      --line-neutral: #6b7688;
+      --amber: #e6ac52;
+      --amber-soft: #362a17;
+      --amber-line: #e2a445;
+      --teal: #46d7a3;
+      --teal-soft: #12291f;
+      --teal-line: #37c48f;
+      --ok: #46d7a3;
+      --warn: #e6ac52;
+      --grid-line: rgba(200, 210, 230, 0.055);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151a;
+    --canvas-bg: #12151a;
+    --surface: #1a1e26;
+    --surface-2: #20242e;
+    --border: #313847;
+    --border-soft: #3a4152;
+    --text: #eef1f5;
+    --text-muted: #97a1b0;
+    --text-faint: #6b7484;
+    --line-neutral: #6b7688;
+    --amber: #e6ac52;
+    --amber-soft: #362a17;
+    --amber-line: #e2a445;
+    --teal: #46d7a3;
+    --teal-soft: #12291f;
+    --teal-line: #37c48f;
+    --ok: #46d7a3;
+    --warn: #e6ac52;
+    --grid-line: rgba(200, 210, 230, 0.055);
+  }
+  :root[data-theme="light"] {
+    --bg: #eef1f6;
+    --canvas-bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f3f5f9;
+    --border: #d3d9e3;
+    --border-soft: #c7ced9;
+    --text: #171b22;
+    --text-muted: #5a6474;
+    --text-faint: #8993a3;
+    --line-neutral: #7c8797;
+    --amber: #b97a12;
+    --amber-soft: #fbeed9;
+    --amber-line: #c98a1c;
+    --teal: #0f8f62;
+    --teal-soft: #e2f5ec;
+    --teal-line: #17a374;
+    --ok: #17915f;
+    --warn: #b06a06;
+    --grid-line: rgba(90, 100, 120, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    padding: 40px 20px 60px;
+  }
+  .mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+  }
+  .page { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+
+  header.title-block { display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--text-faint); font-weight: 600;
+  }
+  h1 {
+    margin: 0; font-size: clamp(21px, 3vw, 28px); font-weight: 700; line-height: 1.25;
+    text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .lede { margin: 0; max-width: 640px; font-size: 14.5px; line-height: 1.6; color: var(--text-muted); }
+
+  .status-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 8px;
+    border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+    font-size: 11.5px; color: var(--text-muted);
+  }
+  .pill .mark { font-weight: 700; }
+  .pill.ok .mark { color: var(--ok); }
+  .pill.warn .mark { color: var(--warn); }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 18px; padding: 12px 16px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface); font-size: 12px; color: var(--text-muted);
+  }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .legend .swatch { width: 22px; height: 2px; border-radius: 1px; flex: none; }
+  .legend .swatch.neutral { background: var(--line-neutral); }
+  .legend .swatch.amber { background: var(--amber-line); }
+  .legend .swatch.teal { background: var(--teal-line); }
+  .legend .swatch.dashed {
+    background: none; border-top: 2px dashed var(--border-soft); height: 0;
+  }
+
+  .diagram-scroll {
+    overflow-x: auto; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--canvas-bg);
+  }
+  .canvas {
+    position: relative; width: 960px; height: 890px;
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .canvas svg { position: absolute; inset: 0; width: 960px; height: 890px; pointer-events: none; }
+
+  .node {
+    position: absolute; border: 1px solid var(--border); border-radius: 3px;
+    background: var(--surface); display: flex; flex-direction: column; justify-content: center;
+    gap: 4px; padding: 10px 14px; z-index: 2;
+  }
+  .node .t1 { font-size: 12.5px; font-weight: 700; line-height: 1.3; }
+  .node .t2 { font-size: 11px; line-height: 1.4; color: var(--text-muted); }
+  .node .t3 { font-size: 10.5px; line-height: 1.4; color: var(--text-faint); }
+
+  .ink-amber { color: var(--amber); }
+  .ink-teal { color: var(--teal); }
+  .node.amber-fill { background: var(--amber-soft); border-color: var(--amber-line); }
+  .node.teal-fill { background: var(--teal-soft); border-color: var(--teal-line); }
+
+  .lane {
+    position: absolute; top: 26px; height: calc(100% - 26px);
+    display: flex; flex-direction: column; justify-content: center;
+    align-items: center; text-align: center; gap: 4px; padding: 8px 16px;
+  }
+  .lane .t1 { font-size: 12.5px; font-weight: 700; }
+  .lane .t2 { font-size: 10.5px; color: var(--text-muted); line-height: 1.4; }
+  .lane.amber { background: var(--amber-soft); }
+  .lane.amber .t1 { color: var(--amber); }
+  .lane.teal { background: var(--teal-soft); }
+  .lane.teal .t1 { color: var(--teal); }
+
+  .harness-header {
+    position: absolute; left: 0; top: 0; width: 100%; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    font-size: 12.5px; font-weight: 700; z-index: 3;
+  }
+
+  .boundary {
+    position: absolute; border: 1.5px dashed var(--border-soft); border-radius: 10px; z-index: 0;
+  }
+  .boundary-label {
+    position: absolute; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-faint); font-weight: 600; z-index: 1;
+  }
+  .bracket-label {
+    position: absolute; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--text-faint); background: var(--canvas-bg); padding: 0 6px; z-index: 1;
+  }
+
+  table.ref {
+    width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  table.ref th, table.ref td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  table.ref th {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint);
+    background: var(--surface-2); font-weight: 600;
+  }
+  table.ref tr:last-child td { border-bottom: none; }
+  table.ref td.port { font-variant-numeric: tabular-nums; }
+  table.ref td.file { color: var(--text-muted); }
+
+  footer { font-size: 12px; color: var(--text-faint); border-top: 1px solid var(--border); padding-top: 16px; }
+  footer .mono { color: var(--text-faint); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="title-block">
+    <div class="eyebrow mono">scenario_emulator / open-deposit</div>
+    <h1>Детерминированное подтверждение: widget вместо текста</h1>
+    <p class="lede">По мотивам реального банковского ассистента: клик по кнопке «Подтвердить» не должен
+       превращаться в текст, который летит в модель. Ниже — как это устроено в референсном стенде
+       <span class="mono">open-deposit</span>: харнесс сам зовёт тул в обход модели и сверяет
+       <span class="mono">confirmation_id</span> по своему стейту.</p>
+    <div class="status-row">
+      <span class="pill ok"><span class="mark">✓</span>--no-sandbox</span>
+      <span class="pill ok"><span class="mark">✓</span>--sandbox (relay + iptables)</span>
+      <span class="pill ok"><span class="mark">✓</span>/scenario-regress (3/3)</span>
+      <span class="pill warn"><span class="mark">△</span>demo-страница — визуально не проверена</span>
+    </div>
+  </header>
+
+  <div class="legend">
+    <div class="item"><span class="swatch neutral"></span>стандартный HTTP-контракт (session / message / state)</div>
+    <div class="item"><span class="swatch amber"></span>текстовый путь (rule-based модель-заглушка)</div>
+    <div class="item"><span class="swatch teal"></span>детерминированный путь (widget → tool, минуя модель)</div>
+    <div class="item"><span class="swatch dashed"></span>граница сетевой изоляции</div>
+  </div>
+
+  <div class="diagram-scroll">
+    <div class="canvas">
+      <svg viewBox="0 0 960 890" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow-neutral" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="var(--line-neutral)"></path>
+          </marker>
+          <marker id="arrow-amber" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="var(--amber-line)"></path>
+          </marker>
+          <marker id="arrow-teal" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="var(--teal-line)"></path>
+          </marker>
+        </defs>
+
+        <!-- client boxes to merge point -->
+        <path d="M200,116 L200,180 L480,180" fill="none" stroke="var(--line-neutral)" stroke-width="1.5" stroke-linejoin="round"></path>
+        <path d="M760,116 L760,180 L480,180" fill="none" stroke="var(--line-neutral)" stroke-width="1.5" stroke-linejoin="round"></path>
+        <path d="M480,180 L480,250" fill="none" stroke="var(--line-neutral)" stroke-width="1.5" marker-end="url(#arrow-neutral)"></path>
+
+        <!-- gateway to harness -->
+        <path d="M480,318 L480,420" fill="none" stroke="var(--line-neutral)" stroke-width="1.5" marker-end="url(#arrow-neutral)"></path>
+
+        <!-- harness lanes down -->
+        <path d="M310,532 L310,584" fill="none" stroke="var(--amber-line)" stroke-width="1.5" marker-end="url(#arrow-amber)"></path>
+        <path d="M650,532 L650,584" fill="none" stroke="var(--teal-line)" stroke-width="1.5" marker-end="url(#arrow-teal)"></path>
+
+        <!-- tool to result -->
+        <path d="M650,684 L650,700" fill="none" stroke="var(--teal-line)" stroke-width="1.5" marker-end="url(#arrow-teal)"></path>
+      </svg>
+
+      <!-- sandbox bracket around runner only -->
+      <div class="boundary" style="left:44px; top:32px; width:312px; height:100px;"></div>
+      <div class="bracket-label mono" style="left:70px; top:26px;">опционально: --sandbox (relay + iptables)</div>
+
+      <!-- client nodes -->
+      <div class="node" style="left:60px; top:48px; width:280px; height:68px;">
+        <div class="t1 mono">Раннер (judge)</div>
+        <div class="t2">widget-ответ обрабатывает раннер сам, не judge</div>
+      </div>
+      <div class="node" style="left:620px; top:48px; width:280px; height:68px;">
+        <div class="t1 mono">Браузер — демо</div>
+        <div class="t2">человек кликает кнопку → сразу action:confirm</div>
+      </div>
+
+      <!-- ui_gateway -->
+      <div class="node" style="left:300px; top:250px; width:360px; height:68px;">
+        <div class="t1 mono">ui_gateway :8767</div>
+        <div class="t2">единственный порт наружу (127.0.0.1) · passthrough</div>
+      </div>
+
+      <!-- docker network boundary -->
+      <div class="boundary" style="left:40px; top:372px; width:880px; height:470px;"></div>
+      <div class="boundary-label mono" style="left:60px; top:386px;">docker network: open-deposit-net — harness / tool недостижимы снаружи</div>
+
+      <!-- harness -->
+      <div class="node" style="left:140px; top:420px; width:680px; height:112px; padding:0;">
+        <div class="harness-header mono">harness :8768 — маршрутизация модель / тул</div>
+        <div class="lane amber" style="left:0; width:340px;">
+          <div class="t1 mono">content → _reply()</div>
+          <div class="t2">текстовый путь · никогда не открывает вклад</div>
+        </div>
+        <div class="lane teal" style="left:340px; width:340px; border-left:1px solid var(--border);">
+          <div class="t1 mono">action:confirm → tool</div>
+          <div class="t2">детерминированный путь · минуя модель</div>
+        </div>
+      </div>
+
+      <!-- widget response -->
+      <div class="node amber-fill" style="left:160px; top:584px; width:300px; height:70px;">
+        <div class="t1 mono ink-amber">→ клиенту: content + widget{…}</div>
+        <div class="t2" style="color:var(--amber); font-weight:600;">вклад ещё НЕ открыт</div>
+      </div>
+
+      <!-- invariant callout -->
+      <div class="node" style="left:160px; top:670px; width:300px; height:150px; border-color:var(--amber-line);">
+        <div class="t1 mono" style="color:var(--amber); font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase;">инвариант</div>
+        <div class="t2">Дословное «Подтверждаю открытие вклада» — тоже текст. <span class="mono">_reply()</span>
+          видит «вклад» → новый <span class="mono">confirmation_id</span>, повторный запрос виджета.
+          Открыть вклад можно только через <span class="mono">action:confirm</span>.</div>
+      </div>
+
+      <!-- tool -->
+      <div class="node teal-fill" style="left:510px; top:584px; width:280px; height:100px;">
+        <div class="t1 mono ink-teal">tool :8769</div>
+        <div class="t2" style="color:var(--teal); font-weight:600;">держатель истины</div>
+        <div class="t3">реестр confirmation_id: выдан / использован?</div>
+      </div>
+
+      <!-- result -->
+      <div class="node" style="left:510px; top:700px; width:280px; height:64px; border-color:var(--teal-line);">
+        <div class="t1 mono" style="font-size:11.5px;">_DEPOSITS[session_id]</div>
+        <div class="t2" style="color:var(--teal); font-weight:600;">status: opened · opened_via: widget_confirm</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="diagram-scroll" style="border: none; background: transparent;">
+    <table class="ref">
+      <thead>
+        <tr><th>Сервис</th><th>Порт</th><th>Файл</th><th>Роль</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">ui_gateway</td>
+          <td class="port mono">8767</td>
+          <td class="file mono">scenario_emulator/open_deposit/ui_gateway.py</td>
+          <td>Единственный порт наружу; transport passthrough + demo-страница на <span class="mono">GET /</span></td>
+        </tr>
+        <tr>
+          <td class="mono">harness</td>
+          <td class="port mono">8768 (внутр.)</td>
+          <td class="file mono">scenario_emulator/open_deposit/harness.py</td>
+          <td>Маршрутизация: текст → <span class="mono">_reply()</span>, <span class="mono">action:confirm</span> → tool напрямую</td>
+        </tr>
+        <tr>
+          <td class="mono">tool</td>
+          <td class="port mono">8769 (внутр.)</td>
+          <td class="file mono">scenario_emulator/open_deposit/tool.py</td>
+          <td>Держатель истины: реестр <span class="mono">confirmation_id</span>, открывает вклад один раз</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    <span class="mono">docs/09_scenario_emulator.md</span> — аддендум «Расширение контракта: widget-подтверждение
+    и compose-стенды» · <span class="mono">examples/scenarios/open-deposit.md</span> ·
+    поднять стенд: <span class="mono">docker compose -f docker/open-deposit-compose.yml up -d --build</span>
+  </footer>
+
+</div>
+
+</body>
+</html>

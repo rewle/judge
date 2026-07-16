@@ -123,31 +123,48 @@ def _run_dialogue(scenario: Scenario, stand_client, judge, model: str, trace_pat
             raise _StandFailure
 
         transcript: list[dict] = []
+        pending_widget = None
         for turn in range(scenario.max_turns):
-            system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
-                goal_text=scenario.goal_text, max_turns=scenario.max_turns,
-            )
-            user_prompt = _build_user_prompt(transcript, turn, scenario.max_turns)
-            resp = judge.messages.create(
-                model=model, max_tokens=512, system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
-            generated = _extract_text(resp)
-            trace.write("user_message", content=generated)
-            transcript.append({"role": "user", "content": generated})
+            if pending_widget is not None:
+                # Ход-подтверждение: авторизован НЕ LLM, а раннером по
+                # widget из предыдущего ответа стенда — judge не зовём.
+                confirmation_id = pending_widget["confirmation_id"]
+                trace.write(
+                    "widget_confirm", handle="auto_confirm",
+                    confirmation_id=confirmation_id,
+                )
+                transcript.append({
+                    "role": "user",
+                    "content": f"[виджет: нажата кнопка «Подтвердить», confirmation_id={confirmation_id}]",
+                })
+                request_body = {"action": "confirm", "confirmation_id": confirmation_id}
+                pending_widget = None
+            else:
+                system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
+                    goal_text=scenario.goal_text, max_turns=scenario.max_turns,
+                )
+                user_prompt = _build_user_prompt(transcript, turn, scenario.max_turns)
+                resp = judge.messages.create(
+                    model=model, max_tokens=512, system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
+                generated = _extract_text(resp)
+                trace.write("user_message", content=generated)
+                transcript.append({"role": "user", "content": generated})
+                request_body = {"content": generated}
 
             try:
                 msg_result = stand_client.call(
-                    "POST", f"/session/{session_id}/message", {"content": generated},
+                    "POST", f"/session/{session_id}/message", request_body,
                 )
             except StandCallError as e:
                 trace.write(
                     "stand_call", handle="send_message",
-                    request={"content": generated}, error=str(e),
+                    request=request_body, error=str(e),
                 )
                 raise _StandFailure from e
             trace.write(
-                "stand_call", handle="send_message", request={"content": generated},
+                "stand_call", handle="send_message", request=request_body,
                 response=msg_result.body, status=msg_result.status,
             )
             if msg_result.status != 200:
@@ -155,6 +172,10 @@ def _run_dialogue(scenario: Scenario, stand_client, judge, model: str, trace_pat
             reply = msg_result.body.get("content", "")
             trace.write("assistant_message", content=reply)
             transcript.append({"role": "stand", "content": reply})
+
+            widget = msg_result.body.get("widget")
+            if isinstance(widget, dict) and widget.get("confirmation_id"):
+                pending_widget = widget
 
         try:
             state_result = stand_client.call("GET", f"/session/{session_id}/state")

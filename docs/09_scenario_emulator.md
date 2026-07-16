@@ -342,6 +342,86 @@ goal_text, events)`: тот же паттерн forced tool_use (`submit_verdict
 запретом) — `held: false`, `reason` разбирает противоречие и объясняет
 вердикт, код возврата 1.
 
+## Расширение контракта: widget-подтверждение и compose-стенды (2026-07-16)
+
+Повод: реальный кейс из отзыва владельца по банковскому ассистенту —
+харнесс превращает widget-callback (клик по кнопке «Подтвердить», с
+`confirmation-id`) в свободный текст, который идёт в модель как обычное
+сообщение пользователя. Риск: подтверждение критического действия зависит
+от того, что модель корректно поймёт текст, а не от отдельного
+детерминированного канала. Референсный пример `open-deposit`
+(`examples/scenarios/open-deposit.md`,
+`scenario_emulator/open_deposit/{tool,harness,ui_gateway}.py`)
+демонстрирует правильный паттерн: харнесс сам зовёт тул напрямую в обход
+модели и сверяет `confirmation_id` по своему стейту.
+
+**Расширение `POST /session/{session_id}/message`** (аддендум к
+«HTTP-контракт стенда» выше — оба новых поля опциональны, ничего не
+ломает; `echo_stand`/`close_account_stand` не меняются и продолжают
+работать как раньше):
+
+```
+POST /session/{session_id}/message
+  body: {"content": "<str>"}                                  # как раньше
+     ИЛИ {"action": "confirm", "confirmation_id": "<str>"}     # widget-callback
+  → 200 {"content": "<str>",
+         "widget"?: {"confirmation_id": "<str>", "type": "<str>", "details": {...}}}
+```
+
+`widget` в ответе — стенд просит подтверждение с этим `confirmation_id`.
+Раннер (не LLM!) обязан на СЛЕДУЮЩЕМ ходу сам отправить `action: confirm`
+с этим id, не спрашивая судью, что писать — судья для этого хода вообще
+не вызывается.
+
+**Новый тип события трейса** — `widget_confirm`, поля `handle:
+"auto_confirm"` (обязательно, `checks.py` матчит `event_field`/
+`event_count` строго по паре `type`+`handle`) и `confirmation_id`. Маркер
+«этот ход НЕ авторизован LLM», отличим от `user_message` в `exact_checks`
+(`event: widget_confirm, handle: auto_confirm`). Семантический судья
+(`semantic.py`, `_render_transcript`) тоже видит этот шаг — рендерится как
+`Пользователь [виджет]: нажата кнопка «Подтвердить» (confirmation_id=...)`
+— иначе критерий «открытие произошло только через отдельный шаг
+подтверждения» было бы нечем подтвердить.
+
+**Новое поле frontmatter `compose_file`** (опционально): путь к
+docker-compose файлу относительно корня репозитория. Если задан,
+`run_scenario.py` сам делает `docker compose -f <file> up -d --build`
+перед прогоном и `down` в `finally` — стенд поднимает система, а не
+скилл `/scenario-regress`. Требование к таким стендам: опубликованный
+сервис обязан отвечать на `GET /health` любым HTTP-статусом (раннер
+поллит его до готовности, таймаут 30 с, см. `_wait_stand_ready` в
+`run_scenario.py`). В отличие от `echo_stand`/`close_account_stand`,
+такой стенд не поднимается bare-процессом — только через compose.
+
+Архитектура `open-deposit` — три отдельных stdlib-`http.server` сервиса
+вместо одного процесса (`ui_gateway` на порту 8767, единственный,
+опубликованный наружу; `harness` на 8768 и `tool` на 8769 — только внутри
+docker-сети `open-deposit-net`), чтобы граница «харнесс не пускает
+widget-callback в модель, а зовёт тул напрямую» была осязаемой (отдельные
+процессы и сеть), а не комментарием в одной функции. `harness` никогда не
+открывает вклад по тексту — даже дословное «Подтверждаю открытие вклада»
+(проверено живым прогоном, см. ниже) — единственный путь к открытию:
+`action: confirm` с `confirmation_id`, реально зарегистрированным в `tool`
+и ещё не использованным.
+
+Проверено живым прогоном 2026-07-16: ручной curl-сценарий против
+поднятого `docker compose` (текст → `widget`, дословное «Подтверждаю
+открытие вклада» → снова `widget`, вклад не открыт → `action: confirm` с
+валидным id → `deposit.status: opened`, `opened_via: widget_confirm` →
+повторный `confirm` тем же id → отклонён, вклад не задвоен). Полный
+прогон `run_scenario.py --scenario examples/scenarios/open-deposit.md` —
+и с `--no-sandbox`, и через `--sandbox` (существующий iptables-relay,
+без правок `docker_sandbox.py`) — `exact_passed: true`, `semantic.held:
+true` в обоих случаях; трейс подтверждает, что ход подтверждения записан
+как `widget_confirm`/`auto_confirm`, а не `user_message`. Отдельно
+проверено, что `docker compose down` отрабатывает в `finally` даже при
+провальном прогоне (искусственно сломанный `stand_url` → таймаут
+`_wait_stand_ready` → контейнеры всё равно убраны). Перепрогон
+`/scenario-regress` (все три фикстуры: echo-smoke, close-account,
+open-deposit) — зелёный без единой правки скилла: `compose_file` во
+frontmatter заставляет `run_scenario.py` поднять и убрать стенд
+`open-deposit` самостоятельно в общем цикле.
+
 ## Открытые вопросы, не закрытые этим документом
 
 - Точный список `exact_checks` (см. таблицу выше) — реализован как
@@ -357,5 +437,3 @@ goal_text, events)`: тот же паттерн forced tool_use (`submit_verdict
   LLM-цикл (см. «Sandbox стенда для Фазы 1», пункт 1) — осознанное
   сужение решения 5, не полная его реализация. Сам транспортный канал
   проверен живьём (см. выше), но это не отменяет сужения.
-- Семантическая проверка (Фаза 3) не реализована — `semantic` в отчёте
-  всегда `null`.
